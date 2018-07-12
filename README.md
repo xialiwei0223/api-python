@@ -26,32 +26,23 @@ To update the existing install:
     python setup.py install --force
 
 
-### How to import DolphinDB python API
-
-```
-import dolphindb as ddb
-
-e.g.
-s = ddb.session() //start a DolphinDB session
-```
-
-or
-
-```
-from dolphindb import *
-
-e.g.
-s = session() //start a DolphinDB session
-```
-
 ### Get it started
 
 Assuming you have dolphindb SERVER running on port 8848, you can run the following commands in python console
 
 ```
     import dolphindb as ddb
-    s = ddb.session() #start a DolphinDB session
-    success = s.connect('localhost', 8848) #connect to DolphinDB server
+    
+    #start a DolphinDB session
+    s = ddb.session() 
+    
+    # connect to DolphinDB server
+    success = s.connect('localhost', 8848)
+    
+    # or connect with login info
+    s = ddb.session() 
+    success = s.connect('localhost', 8848, "admin","123456") 
+    
     if success:
         obj = s.run("Your XXDB script") #run dolphinDB script
         print obj
@@ -63,7 +54,8 @@ http://www.dolphindb.com/help/PythonAPI.html
 
 ###  Package introduction
 
-1: session.py #DolphinDB api for querying DolphinDB server
+1: session.py 
+DolphinDB api for querying DolphinDB server
 
 2: settings.py
 contain the data form and type definitions, and other settings
