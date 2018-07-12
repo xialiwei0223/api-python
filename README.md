@@ -31,21 +31,21 @@ To update the existing install:
 Assuming you have dolphindb SERVER running on port 8848, you can run the following commands in python console
 
 ```
-    import dolphindb as ddb
+import dolphindb as ddb
     
-    #start a DolphinDB session
-    s = ddb.session() 
+#start a DolphinDB session
+s = ddb.session() 
     
-    # connect to DolphinDB server
-    success = s.connect('localhost', 8848)
+# connect to DolphinDB server
+success = s.connect('localhost', 8848)
     
-    # or connect with login info
-    s = ddb.session() 
-    success = s.connect('localhost', 8848, "admin","123456") 
+# or connect with login info
+s = ddb.session() 
+success = s.connect('localhost', 8848, "admin","123456") 
     
-    if success:
-        obj = s.run("Your XXDB script") #run dolphinDB script
-        print obj
+if success:
+    obj = s.run("Your XXDB script") #run dolphinDB script
+    print obj
 ```
 
 For more examples, please refer to
