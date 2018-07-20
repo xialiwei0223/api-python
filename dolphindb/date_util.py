@@ -232,9 +232,9 @@ class NanoTimestamp(temporal):
 
     def __repr__(self):
         if self.value == DBNAN[DT_NANOTIMESTAMP]: return ''
-        dt,nanoseconds = parseNanoTimestamp(self.value)
+        dt = parseNanoTimestamp(self.value)
         return "{0:04d}.{1:02d}.{2:02d}T{3:02d}:{4:02d}:{5:02d}.{6:09d}".format(dt.year, dt.month, dt.day, dt.hour,
-                                                                                dt.minute, dt.second, nanoseconds)
+                                                                                dt.minute, dt.second, self.value)
 
 
 def countDays(date):

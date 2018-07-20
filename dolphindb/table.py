@@ -4,6 +4,8 @@ from dolphindb.vector import FilterCond
 import uuid
 import copy
 import __builtin__
+import re
+import inspect
 
 
 def _generate_tablename():
@@ -17,24 +19,48 @@ def _getFuncName(f):
 
 
 class Table(object):
-    def __init__(self, data=None,dbPath=None, s=None):
+    def __init__(self, data=None, dbPath=None, tableAliasName=None, partitions=[], inMem=False, schemaInited=False, s=None):
+        self.__having = None
+        self.__top = None
+        self.__exec = False
         if s is None:
             raise RuntimeError("session must be provided")
         self.__tableName = _generate_tablename() if not isinstance(data, str) else data
-        self.__session = s # type: session
-        self.__schemaInited = False
+        self.__session = s  # type: session
+        self.__schemaInited = schemaInited
+        if not isinstance(partitions, list):
+            raise RuntimeError(
+                'Column names must be passed in as a list')
         if isinstance(data, dict) or isinstance(data, DataFrame):
             df = data if isinstance(data, DataFrame) else DataFrame(data)
             self.__session.upload({self.__tableName : df})
             self.vecs = {}
+
             # self.__session.run("share %s as S%s" % (self.__tableName, self.__tableName))
             for colName in df.keys():
                 self.vecs[colName] = Vector(name=colName, tableName=self.__tableName, s=self.__session)
             self._setSelect(list(self.vecs.keys()))
         elif isinstance(data, str):
             if dbPath:
-                self.__tableName = _generate_tablename()
-                self.__session.run(self.__tableName + '=loadTable("' + dbPath + '","' + data + '")')
+                if tableAliasName:
+                    self.__tableName = tableAliasName
+                else:
+                    self.__tableName = data
+                runstr = '{tableName} = loadTable("{dbPath}", "{data}",{partitions},{inMem})'
+                fmtDict = dict()
+                fmtDict['tableName'] = self.__tableName
+                fmtDict['dbPath'] = dbPath
+                fmtDict['data'] = data
+                if len(partitions) and type(partitions[0]) is not str:
+                    fmtDict['partitions'] = ('[' + ','.join(str(x) for x in partitions) + ']') if len(partitions) else ""
+                else:
+                    fmtDict['partitions'] = ('["' + '","'.join(partitions) + '"]') if len(partitions) else ""
+                fmtDict['inMem'] = str(inMem).lower()
+                runstr = re.sub(' +', ' ', runstr.format(**fmtDict).strip())
+                # print(runstr)
+                self.__session.run(runstr)
+                # runstr = '%s = select * from %s' %(self.__tableName, self.__tableName)
+                # self.__session.run(runstr)
             else:
                 pass
         else:
@@ -42,9 +68,13 @@ class Table(object):
         self._init_schema()
 
     def __deepcopy__(self, memodict={}):
-        newTable = Table(data=self.__tableName, s=self.__session)
+        newTable = Table(data=self.__tableName, schemaInited=True, s=self.__session)
         try:
             newTable.vecs = copy.deepcopy(self.vecs, memodict)
+        except AttributeError:
+            pass
+
+        try:
             newTable.__schemaInited = copy.deepcopy(self.__schemaInited, memodict)
         except AttributeError:
             pass
@@ -92,11 +122,14 @@ class Table(object):
     def _init_schema(self):
         if self.__schemaInited is True:
             return
-        schema = self.__session.run("schema(%s)" % self.__tableName)  # type: dict
-        colDefs = schema.get('colDefs')  # type: DataFrame
+        colNames = self.__session.run("colNames(%s)" % self.__tableName)
+        # schema = self.__session.run("schema(%s)" % self.__tableName)  # type: dict
+        # colDefs = schema.get('colDefs')  # type: DataFrame
         self.vecs = {}
-        for colName in colDefs['name']:
-            self.vecs[colName] = Vector(name=colName, tableName=self.__tableName, s=self.__session)
+        self.__columns = colNames
+        if colNames is not None:
+            for colName in colNames:
+                self.vecs[colName] = Vector(name=colName, tableName=self.__tableName, s=self.__session)
         self._setSelect(list(self.vecs.keys()))
 
     def __getattr__(self, item):
@@ -138,6 +171,9 @@ class Table(object):
         else:
             self.__sort = [str(bys)]
 
+    def _setTop(self, num):
+        self.__top = str(num)
+
     def _setWhere(self, where):
         self.__where = where
 
@@ -165,6 +201,9 @@ class Table(object):
         except AttributeError:
             self.__contextby = contextby
 
+    def _setHaving(self, having):
+        self.__having = having
+
     def groupby(self, cols):
         groupbyTable = copy.deepcopy(self)
         groupby = TableGroupby(groupbyTable, cols)
@@ -181,6 +220,39 @@ class Table(object):
         sortTable = copy.deepcopy(self)
         sortTable._setSort(bys)
         return sortTable
+
+    def top(self, num):
+        topTable = copy.deepcopy(self)
+        topTable._setTop(num)
+        return topTable
+
+    def selectAsVector(self, cols=None, vectorAlias=None):
+        if cols:
+            self._setSelect(cols)
+        pattern = re.compile("select", re.IGNORECASE)
+        query = pattern.sub('exec',self.showSQL())
+        if vectorAlias:
+            print query
+            self.__session.run(vectorAlias+"="+query)
+        else:
+            return self.__session.run(query)
+
+    @property
+    def count(self):
+        return self.__session.run("exec count(*) from %s" % self.__tableName)
+
+    @property
+    def columns(self):
+        if not self.__columns:
+            cols = self.__session.run("columnNames(%s)" % self.__tableName)
+            self.__columns = cols
+        return self.__columns
+
+    @property
+    def schema(self):
+        schema = self.__session.run("schema(%s)" % self.__tableName)  # type: dict
+        colDefs = schema.get('colDefs')  # type: DataFrame
+        return colDefs
 
     def pivotby(self, index, column, value, aggFunc=None):
         """
@@ -252,10 +324,13 @@ class Table(object):
         self._init_schema()
         right._init_schema()
         joinTable = copy.deepcopy(self)
-        leftAliasPrefix = 'lhs_' if how != 'right' else 'rhs_'
-        rightAliasPrefix = 'rhs_' if how != 'right' else 'lhs_'
-        leftSelectCols = [leftTableName + '.' + col + ' as ' + leftAliasPrefix + col for col in self._getSelect()]
-        rightSelectCols = [rightTableName + '.' + col + ' as ' + rightAliasPrefix + col for col in right._getSelect()]
+        # leftAliasPrefix = 'lhs_' if how != 'right' else 'rhs_'
+        # rightAliasPrefix = 'rhs_' if how != 'right' else 'lhs_'
+        # leftSelectCols = [leftTableName + '.' + col + ' as ' + leftTableName + "_" + col for col in self._getSelect()]
+        # rightSelectCols = [rightTableName + '.' + col + ' as ' + rightTableName + "_" + col for col in right._getSelect()]
+        leftSelectCols = self._getSelect()
+        rightSelectCols = [rightTableName + '.' + col + ' as ' + rightTableName + "_" + col for col in
+                           right._getSelect() if col in self._getSelect()]
         joinTable._setTableName(finalTableName)
         joinTable._setSelect(leftSelectCols + rightSelectCols)
         return joinTable
@@ -303,10 +378,12 @@ class Table(object):
         self._init_schema()
         right._init_schema()
         joinTable = copy.deepcopy(self)
-        leftAliasPrefix = 'lhs_'
-        rightAliasPrefix = 'rhs_'
-        leftSelectCols = [leftTableName + '.' + col + ' as ' + leftAliasPrefix + col for col in self._getSelect()]
-        rightSelectCols = [rightTableName + '.' + col + ' as ' + rightAliasPrefix + col for col in right._getSelect()]
+        # leftAliasPrefix = 'lhs_'
+        # rightAliasPrefix = 'rhs_'
+        # leftSelectCols = [leftTableName + '.' + col + ' as ' + leftTableName +"_" + col for col in self._getSelect()]
+        # rightSelectCols = [rightTableName + '.' + col + ' as ' + rightTableName + "_" + col for col in right._getSelect()]
+        leftSelectCols = self._getSelect()
+        rightSelectCols = [rightTableName + '.' + col + ' as ' + rightTableName + "_" + col   for col in right._getSelect() if col in self._getSelect()]
         joinTable._setTableName(finalTableName)
         joinTable._setSelect(leftSelectCols + rightSelectCols)
         return joinTable
@@ -316,7 +393,10 @@ class Table(object):
 
     def _assembleSelect(self):
         try:
-            return ','.join(self.__select)
+            if len(self.__select):
+                return ','.join(self.__select)
+            else:
+                return '*'
         except AttributeError:
             return '*'
 
@@ -343,18 +423,105 @@ class Table(object):
 
     def showSQL(self):
         import re
-        queryFmt = 'select {select} from {table} {where} {groupby} {orderby}'
+        queryFmt = 'select {top} {select} from {table} {where} {groupby} {having} {orderby}'
         fmtDict = {}
-
+        fmtDict['top'] = ("top " + self.__top) if self.__top else ''
         fmtDict['select'] = self._assembleSelect()
         fmtDict['table'] = self.tableName()
         fmtDict['where'] = self._assembleWhere()
         fmtDict['groupby'] = self._assembleGroupbyOrContextby()
+        fmtDict['having'] = ("having " + self.__having) if self.__having else ''
         fmtDict['orderby'] = self._assembleOrderby()
-
         query = re.sub(' +', ' ', queryFmt.format(**fmtDict).strip())
-
         return query
+
+    def append(self, table):
+        if not isinstance(table, Table):
+            raise RuntimeError("Only DolphinDB Table object is accepted")
+
+        runstr = "%s.append!(%s)" % (self.tableName(), table.tableName())
+        self.__session.run(runstr)
+        return self
+
+    def update(self, cols, vals):
+        tmp = copy.deepcopy(self)
+        updateTable = TableUpdate(t=tmp, cols=cols, vals=vals)
+        return updateTable
+
+    def rename(self, newName):
+        self.__session.run(newName+'='+self.tableName())
+        self.__tableName = newName
+
+    def delete(self):
+        tmp = copy.deepcopy(self)
+        delTable = TableDelete(t=tmp)
+        return delTable
+
+    def drop(self, cols):
+        if cols is not None and len(cols):
+            runstr = '{table}.drop!([{cols}])'
+            fmtDict = dict()
+            fmtDict['table'] = self.tableName()
+            fmtDict['cols'] = '"'+ '","'.join(cols) + '"'
+            query = re.sub(' +', ' ', runstr.format(**fmtDict).strip())
+            self.__session.run(query)
+        return self
+
+    def executeAs(self, newTableName):
+        self.__session.run(newTableName + "=" + self.showSQL())
+        return Table(data=newTableName, s=self.__session)
+
+    def contextby(self, cols):
+        contextbyTable = copy.deepcopy(self)
+        contextby = TableContextby(contextbyTable, cols)
+        contextbyTable._setContextby(contextby)
+        return contextby
+
+    def ols(self, Y, X, INTERCEPT=True):
+        """
+        :param Y: is the dependent variable, table column
+        :param X: is the independent variable, a list of table column names
+        :param INTERCEPT:
+        :return:a dictionary with all regression statistics
+
+        """
+        myY = ""
+        myX = []
+
+        if isinstance(Y, str):
+            myY = Y
+        else:
+            raise ValueError("Y must be a column name")
+        if isinstance(X,str):
+            myX = [X]
+        elif isinstance(X, list):
+            myX = X
+        else:
+            raise ValueError("X must be a column name or a list of column names")
+        if not len(myY) or not len(myX):
+            raise ValueError("Invalid Input data")
+        schema = self.__session.run("schema(%s)" % self.__tableName)
+
+        if 'partitionColumnName' in schema and schema['partitionColumnName']:
+            dsstr = "sqlDS(<SQLSQL>)".replace('SQLSQL', self.showSQL()).replace('select select','select')
+            runstr = "olsEx({ds},{Y},{X},{INTERCEPT},2)"
+            fmtDict = dict()
+            fmtDict['table'] = self.tableName()
+            fmtDict['Y'] = myY
+            fmtDict['X'] = str(myX)
+            fmtDict['ds'] = dsstr
+            fmtDict['INTERCEPT'] = str(INTERCEPT).lower()
+            query = re.sub(' +', ' ', runstr.format(**fmtDict).strip())
+            return self.__session.run(query)
+        else:
+            runstr = "z=exec ols({Y},{X},{INTERCEPT},2) from {table}"
+            fmtDict = dict()
+            fmtDict['table'] = self.tableName()
+            fmtDict['Y'] = myY
+            fmtDict['X'] = str(myX)
+            fmtDict['INTERCEPT'] = str(INTERCEPT).lower()
+            query = re.sub(' +', ' ', runstr.format(**fmtDict).strip())
+            return self.__session.run(query)
 
     def toDF(self):
         """
@@ -368,8 +535,133 @@ class Table(object):
         df = self.__session.run(query) # type: DataFrame
 
         return df
-
     toDataFrame = toDF
+
+
+class TableDelete(object):
+    def __init__(self, t):
+        self.__t = t
+
+    def _assembleWhere(self):
+        try:
+            return 'where ' + ' and '.join(self.__where)
+        except AttributeError:
+            return ''
+
+    def _addWhereCond(self, conds):
+        try:
+            _ = self.__where
+        except AttributeError:
+            self.__where = []
+
+        if isinstance(conds, list) or isinstance(conds, tuple):
+            self.__where.extend([str(x) for x in conds])
+        else:
+            self.__where.append(str(conds))
+
+    def where(self, conds):
+        self._addWhereCond(conds)
+        return self
+
+    def showSQL(self):
+        curframe = inspect.currentframe()
+        calframe = inspect.getouterframes(curframe, 2)
+        caller = calframe[1][3]
+        if caller !='execute' and caller !='print' and caller !="str" and caller !='<module>':
+            return self.__t.showSQL()
+        queryFmt = 'delete from {table} {where}'
+        fmtDict = {}
+        fmtDict['table'] = self.__t.tableName()
+        fmtDict['where'] = self._assembleWhere()
+        query = re.sub(' +', ' ', queryFmt.format(**fmtDict).strip())
+        return query
+
+    def execute(self):
+        """
+        execute sql query on remote dolphindb server
+        :return: query result as a pandas.DataFrame object
+        """
+        query = self.showSQL()
+        self.__t.session().run(query) # type: DataFrame
+
+    def toDF(self):
+        """
+        execute sql query on remote dolphindb server
+        :return: query result as a pandas.DataFrame object
+        """
+        query = self.showSQL()
+
+        df = self.__t.session().run(query) # type: DataFrame
+
+        return df
+
+
+class TableUpdate(object):
+    def __init__(self, t, cols, vals):
+        self.__t = t
+        self.__cols = cols
+        self.__vals = vals
+
+    def _assembleUpdate(self):
+        query = ""
+        for col, val in zip(self.__cols, self.__vals):
+            query += col +"="+val + ","
+        return query[:-1]
+
+    def _assembleWhere(self):
+        try:
+            return 'where ' + ' and '.join(self.__where)
+        except AttributeError:
+            return ''
+
+    def _addWhereCond(self, conds):
+        try:
+            _ = self.__where
+        except AttributeError:
+            self.__where = []
+
+        if isinstance(conds, list) or isinstance(conds, tuple):
+            self.__where.extend([str(x) for x in conds])
+        else:
+            self.__where.append(str(conds))
+
+    def where(self, conds):
+        self._addWhereCond(conds)
+        return self
+
+    def showSQL(self):
+        curframe = inspect.currentframe()
+        calframe = inspect.getouterframes(curframe, 2)
+        caller = calframe[1][3]
+        if caller !='execute' and caller !='print' and caller !="str" and caller !='<module>':
+            return self.__t.showSQL()
+        queryFmt = 'update {table} set {update} {where}'
+        fmtDict = {}
+        fmtDict['update'] = self._assembleUpdate()
+        fmtDict['table'] = self.__t.tableName()
+        fmtDict['where'] = self._assembleWhere()
+        query = re.sub(' +', ' ', queryFmt.format(**fmtDict).strip())
+        return query
+
+    def execute(self):
+        """
+        execute sql query on remote dolphindb server
+        :return: query result as a pandas.DataFrame object
+        """
+        query = self.showSQL()
+        self.__t.session().run(query) # type: DataFrame
+
+    def toDF(self):
+        """
+        execute sql query on remote dolphindb server
+        :return: query result as a pandas.DataFrame object
+        """
+        query = self.showSQL()
+
+        df = self.__t.session().run(query) # type: DataFrame
+
+        return df
+
 
 class TablePivotBy(object):
     def __init__(self, t, index, column, value, agg=None):
@@ -401,6 +693,10 @@ class TablePivotBy(object):
     def _assemblePivotBy(self):
         return 'pivot by ' + self.__row + ',' + self.__column
 
+    def executeAs(self, newTableName):
+        self.__session.run(newTableName + "=" + self.showSQL())
+        return Table(data=newTableName, s=self.__t.session())
+
     def showSQL(self):
         import re
         queryFmt = 'select {select} from {table} {where} {pivotby}'
@@ -410,27 +706,46 @@ class TablePivotBy(object):
         fmtDict['table'] = self.__t.tableName()
         fmtDict['where'] = self._assembleWhere()
         fmtDict['pivotby'] = self._assemblePivotBy()
-
         query = re.sub(' +', ' ', queryFmt.format(**fmtDict).strip())
-
         return query
 
+    def executeAs(self, newTableName):
+        self.__t.session().run(newTableName + "=" + self.showSQL())
+        return Table(data=newTableName, s=self.__t.session())
+
+    def selectAsVector(self, cols=[], vectorAlias=None):
+        if len(cols):
+            self._setSelect(cols)
+        pattern = re.compile("select", re.IGNORECASE)
+        query = pattern.sub('exec',self.showSQL())
+        if vectorAlias:
+            # print vectorAlias+"="+query
+            self.__t.session().run(vectorAlias+"="+query)
+        else:
+            return self.__t.session().run(query)
+
+
 class TableGroupby(object):
-    def __init__(self, t, groupBys):
+    def __init__(self, t, groupBys, having=None):
         if isinstance(groupBys, list):
             self.__groupBys = groupBys
         else:
             self.__groupBys = [groupBys]
+        self.__having = having
         self.__t = t # type: Table
 
     def sort(self, bys):
         sortTable = copy.deepcopy(self.__t)
         sortTable._setSort(bys)
-        return TableGroupby(sortTable, self.__groupBys)
+        return TableGroupby(sortTable, self.__groupBys, self.__having)
+
+    def executeAs(self, newTableName):
+        self.__t.session().run(newTableName + "=" + self.showSQL())
+        return Table(data=newTableName, s=self.__t.session())
 
     def __getitem__(self, item):
         selectTable = self.__t.select(item)
-        return TableGroupby(selectTable, groupBys=self.__groupBys)
+        return TableGroupby(selectTable, groupBys=self.__groupBys, having=self.__having)
 
     def __iter__(self):
         self.__groupBysIdx = 0
@@ -446,6 +761,26 @@ class TableGroupby(object):
 
     def __next__(self):
         return self.next()
+
+    def having(self, expr):
+        havingTable = copy.deepcopy(self.__t)
+        self.__having = expr
+        havingTable._setHaving(self.__having)
+        return havingTable
+
+    def ols(self, Y, X, INTERCEPT=True):
+        return self.__t.ols(Y=Y,X=X, INTERCEPT=INTERCEPT)
+
+    def selectAsVector(self, cols=[], vectorAlias=None):
+        if len(cols):
+            self.__t.select(cols)
+        pattern = re.compile("select", re.IGNORECASE)
+        query = pattern.sub('exec',self.__t.showSQL())
+        if vectorAlias:
+            # print query
+            self.__t.session().run(vectorAlias+"="+query)
+        else:
+            return self.__t.session().run(query)
 
     def showSQL(self):
         return self.__t.showSQL()
@@ -524,7 +859,10 @@ class TableGroupby(object):
             func = [func]
         if __builtin__.sum([1 for x in cols if isinstance(x, tuple) is False or len(x) != 2]):
             raise RuntimeError('agg2 only accepts (x,y) pair or a list of (x,y) pair as cols')
-        return self.__t.select([_getFuncName(f) + '(' + x + ',' + y + ')' for f in func for x,y in cols])
+        funcName = [_getFuncName(f) + '(' + x + ',' + y + ')' for f in func for x,y in cols]
+        if funcName:
+            self.__t._getSelect().extend(funcName)
+        return self.__t.select(self.__t._getSelect())
 
     def wavg(self, cols):
         return self.agg2('wavg', cols)
@@ -538,19 +876,35 @@ class TableGroupby(object):
     def corr(self, cols):
         return self.agg2('corr', cols)
 
+    def toDF(self):
+        """
+        execute sql query on remote dolphindb server
+        :return: query result as a pandas.DataFrame object
+        """
+        query = self.showSQL()
+        df = self.__t.session().run(query)  # type: DataFrame
+        return df
+
 
 class TableContextby(object):
-    def __init__(self, t, contextBys):
+    def __init__(self, t, contextBys, having=None):
         if isinstance(contextBys, list):
             self.__contextBys = contextBys
         else:
             self.__contextBys = [contextBys]
         self.__t = t # type: Table
+        self.__having = having
 
     def sort(self, bys):
         sortTable = copy.deepcopy(self.__t)
         sortTable._setSort(bys)
         return TableContextby(sortTable, self.__contextBys)
+
+    def having(self, expr):
+        havingTable = copy.deepcopy(self.__t)
+        self.__having = expr
+        havingTable._setHaving(self.__having)
+        return havingTable
 
     def __getitem__(self, item):
         selectTable = self.__t.select(item)
@@ -570,6 +924,30 @@ class TableContextby(object):
 
     def __next__(self):
         return self.next()
+
+    def selectAsVector(self, cols=[], vectorAlias=None):
+        if len(cols):
+            self.__t.select(cols)
+        pattern = re.compile("select", re.IGNORECASE)
+        query = pattern.sub('exec',self.__t.showSQL())
+        if vectorAlias:
+            # print query
+            self.__t.session().run(vectorAlias+"="+query)
+        else:
+            return self.__t.session().run(query)
+
+    def top(self,num):
+        return self.__t.top(num=num)
+
+    def having(self, expr):
+        havingTable = copy.deepcopy(self.__t)
+        self.__having = expr
+        havingTable._setHaving(self.__having)
+        return havingTable
+
+    def executeAs(self, newTableName):
+        self.__t.session().run(newTableName + "=" + self.showSQL())
+        return Table(data=newTableName, s=self.__t.session())
 
     def showSQL(self):
         return self.__t.showSQL()
@@ -597,7 +975,32 @@ class TableContextby(object):
                                ' or a dict of column label/expression->func')
         columns = self.__contextBys[:]
         columns.extend(selectCols)
+        lowered = [x.lower() for x in columns]
+        for x in self.__t._getSelect():
+            if x.lower() not in lowered:
+                columns.append(x)
         return self.__t.select(columns)
+
+
+    def agg2(self, func, cols):
+        '''
+        apply aggregate functions of two arguments.
+        e.g. wsum(x,y) computes the sum of x, weighted by y.
+
+        :param func: aggregate function name or a list of aggregate function names
+        :param cols: (x,y) tuple or a list of (x,y) tuple where x and y are column labels or column expressions
+        :return: Table object
+        '''
+        if isinstance(cols, list) is False:
+            cols = [cols]
+        if isinstance(func, list) is False:
+            func = [func]
+        if __builtin__.sum([1 for x in cols if isinstance(x, tuple) is False or len(x) != 2]):
+            raise RuntimeError('agg2 only accepts (x,y) pair or a list of (x,y) pair as cols')
+        funcName = [_getFuncName(f) + '(' + x + ',' + y + ')' for f in func for x,y in cols]
+        if funcName:
+            self.__t._getSelect().extend(funcName)
+        return self.__t.select(self.__t._getSelect())
 
     def sum(self):
         return self.agg('sum')
@@ -646,23 +1049,6 @@ class TableContextby(object):
 
     def cummin(self):
         return self.agg('cummin')
-
-    def agg2(self, func, cols):
-        '''
-        apply aggregate functions of two arguments.
-        e.g. wsum(x,y) computes the sum of x, weighted by y.
-
-        :param func: aggregate function name or a list of aggregate function names
-        :param cols: (x,y) tuple or a list of (x,y) tuple where x and y are column labels or column expressions
-        :return: Table object
-        '''
-        if isinstance(cols, list) is False:
-            cols = [cols]
-        if isinstance(func, list) is False:
-            func = [func]
-        if __builtin__.sum([1 for x in cols if isinstance(x, tuple) is False or len(x) != 2]):
-            raise RuntimeError('agg2 only accepts (x,y) pair or a list of (x,y) pair as cols')
-        return self.__t.select([_getFuncName(f) + '(' + x + ',' + y + ')' for f in func for x,y in cols])
 
     def wavg(self, cols):
         return self.agg2('wavg', cols)

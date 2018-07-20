@@ -27,7 +27,7 @@ def table_str_col_generator(socket):
     return vc
 
 
-def read_xxdb_obj_general(socket):
+def read_dolphindb_obj_general(socket):
     data_form, data_type = get_form_type(socket)
     if data_form == DF_VECTOR and data_type == DT_ANY:
         return VECTOR_FACTORY[DT_ANY](socket)
@@ -55,15 +55,15 @@ def vec_generator(socket, data_type):
         vc = []
         for i in xrange(size):
             vc.append(read_string(socket))
-        """
-        while True:
-            packet = recvall(socket, 4096)
-            if not packet or not len(packet):
-                break
-            data += packet
-        (data.split('\x00\x00')[0].split('\x00')[:size])
-        """
         return np.array(vc)
+    elif data_type in [DT_RESOURCE]:
+        data = ''
+        while True:
+          packet = recvall(socket, 4096)
+          if not packet or not len(packet):
+              break
+          data  += packet
+        return np.array(data.split('\x00\x00')[0].split('\x00')[:size])
     else:
         return np.array(DATA_UNPACKER[data_type](socket, size))
 
@@ -99,12 +99,14 @@ def dict_generator(socket):
         raise Exception("Invalid key type: " + str(key_type))
 
     vals = VECTOR_FACTORY[val_type](socket)
-    if len(keys) != len(vals):
-        raise Exception("The keys array size is not equal to the vals array size.")
+    if vals is not None:
+        if len(keys) != len(vals):
+            raise Exception("The keys array size is not equal to the vals array size.")
 
     tmp = dict()
-    for idx in xrange(len(keys)):
-        tmp[keys[idx]] = vals[idx]
+    if keys is not None and vals is not None:
+        for idx in xrange(len(keys)):
+            tmp[keys[idx]] = vals[idx]
     return tmp
 
 
@@ -223,10 +225,11 @@ DATA_UNPACKER[DT_STRING] = lambda x, y: None
 DATA_UNPACKER[DT_ANY] = lambda x, y: None
 DATA_UNPACKER[DT_DICTIONARY] = lambda x, y: None
 DATA_UNPACKER[DT_OBJECT] = lambda x, y: None
-
+DATA_UNPACKER[DT_RESOURCE] = lambda x, y: None
 
 """ dictionary of functions for making numpy arrays from xxdb vectors"""
 VECTOR_FACTORY = dict()
+VECTOR_FACTORY[DT_VOID] = lambda x: list
 VECTOR_FACTORY[DT_BOOL] = lambda x: vec_generator(x, DT_BOOL)
 VECTOR_FACTORY[DT_BYTE] = lambda x: vec_generator(x, DT_BYTE)
 VECTOR_FACTORY[DT_SHORT] = lambda x: vec_generator(x, DT_SHORT)
@@ -246,13 +249,14 @@ VECTOR_FACTORY[DT_FLOAT] = lambda x: vec_generator(x, DT_FLOAT)
 VECTOR_FACTORY[DT_DOUBLE] = lambda x: vec_generator(x, DT_DOUBLE)
 VECTOR_FACTORY[DT_SYMBOL] = lambda x: map(lambda z: swap(z, DT_SYMBOL), vec_generator(x, DT_SYMBOL))
 VECTOR_FACTORY[DT_STRING] = lambda x: map(lambda z: swap(z, DT_STRING), vec_generator(x, DT_STRING))
+VECTOR_FACTORY[DT_RESOURCE] = lambda x: None
 def vector_factory_any(socket):
     row = DATA_UNPACKER_SCALAR[DT_INT](socket)
     col = DATA_UNPACKER_SCALAR[DT_INT](socket)
     size = row * col
     myList = []
     for i in range(0, size):
-        myList.append(read_xxdb_obj_general(socket))
+        myList.append(read_dolphindb_obj_general(socket))
     return myList
 VECTOR_FACTORY[DT_ANY] = vector_factory_any
 
