@@ -20,11 +20,13 @@ Method 2:
 Then, please go to our python api folder and install the package through the following command:
 
 To install for the first time:
+```
     python setup.py install
-
+```
 To update the existing install:
-    python setup.py install --force
-
+```   
+   python setup.py install --force
+```
 
 ### Get it started
 
