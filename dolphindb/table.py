@@ -501,13 +501,12 @@ class Table(object):
         if not len(myY) or not len(myX):
             raise ValueError("Invalid Input data")
         schema = self.__session.run("schema(%s)" % self.__tableName)
-
         if 'partitionColumnName' in schema and schema['partitionColumnName']:
             dsstr = "sqlDS(<SQLSQL>)".replace('SQLSQL', self.showSQL()).replace('select select','select')
             runstr = "olsEx({ds},{Y},{X},{INTERCEPT},2)"
             fmtDict = dict()
             fmtDict['table'] = self.tableName()
-            fmtDict['Y'] = myY
+            fmtDict['Y'] = '"'+myY+'"'
             fmtDict['X'] = str(myX)
             fmtDict['ds'] = dsstr
             fmtDict['INTERCEPT'] = str(INTERCEPT).lower()
@@ -713,16 +712,12 @@ class TablePivotBy(object):
         self.__t.session().run(newTableName + "=" + self.showSQL())
         return Table(data=newTableName, s=self.__t.session())
 
-    def selectAsVector(self, cols=[], vectorAlias=None):
-        if len(cols):
-            self._setSelect(cols)
+    def selectAsVector(self, colName):
+        if colName:
+            self._setSelect(colName)
         pattern = re.compile("select", re.IGNORECASE)
-        query = pattern.sub('exec',self.showSQL())
-        if vectorAlias:
-            # print vectorAlias+"="+query
-            self.__t.session().run(vectorAlias+"="+query)
-        else:
-            return self.__t.session().run(query)
+        query = pattern.sub('exec', self.showSQL())
+        return self.__session.run(query)
 
 
 class TableGroupby(object):
@@ -771,16 +766,12 @@ class TableGroupby(object):
     def ols(self, Y, X, INTERCEPT=True):
         return self.__t.ols(Y=Y,X=X, INTERCEPT=INTERCEPT)
 
-    def selectAsVector(self, cols=[], vectorAlias=None):
-        if len(cols):
-            self.__t.select(cols)
+    def selectAsVector(self, colName):
+        if colName:
+            self._setSelect(colName)
         pattern = re.compile("select", re.IGNORECASE)
-        query = pattern.sub('exec',self.__t.showSQL())
-        if vectorAlias:
-            # print query
-            self.__t.session().run(vectorAlias+"="+query)
-        else:
-            return self.__t.session().run(query)
+        query = pattern.sub('exec', self.showSQL())
+        return self.__session.run(query)
 
     def showSQL(self):
         return self.__t.showSQL()
@@ -925,16 +916,12 @@ class TableContextby(object):
     def __next__(self):
         return self.next()
 
-    def selectAsVector(self, cols=[], vectorAlias=None):
-        if len(cols):
-            self.__t.select(cols)
+    def selectAsVector(self, colName):
+        if colName:
+            self._setSelect(colName)
         pattern = re.compile("select", re.IGNORECASE)
-        query = pattern.sub('exec',self.__t.showSQL())
-        if vectorAlias:
-            # print query
-            self.__t.session().run(vectorAlias+"="+query)
-        else:
-            return self.__t.session().run(query)
+        query = pattern.sub('exec', self.showSQL())
+        return self.__session.run(query)
 
     def top(self,num):
         return self.__t.top(num=num)

@@ -8,7 +8,9 @@ from dolphindb.settings import *
 from dolphindb.type_util import determine_form_type
 from dolphindb.pair import Pair
 from dolphindb.table import Table
-from threading import Thread, Lock
+# from threading import Thread, Lock
+# import base64
+
 
 def _generate_tablename():
     return "T" + uuid.uuid4().hex[:8]
@@ -34,7 +36,7 @@ class session(object):
         self.sessionID = None
         self.remoteLittleEndian = None
         self.encrypted = False
-        self.mutex=Lock()
+        # self.mutex=Lock()
         if self.host is not None and self.port is not None:
             self.connect(host, port)
 
@@ -312,27 +314,24 @@ class session(object):
         self.run(dbstr)
         return
 
-    def dropDatabase(self, dbName):
-        print dbName
-        self.run("dropDatabase('"+dbName+"')")
-
-    def loadTextEx(self,tableName="", dbPath="", partitionType=RANGE, partitions=[],  partitionColumns=[], filePath="", delimiter=","):
+    def loadTextEx(self,tableName="", dbPath="",  partitionColumns=[], filePath="", delimiter=","):
         """
-
         :param tableName: loadTextEx table name
         :param dbPath: database path, when dbPath is empty, it is in-memory database
-        :param partitionType: database partition type
-        :param partitions: partition schema
         :param partitionColumns: partition columns as a python list
         :param filePath:the file to load into database
         :param delimiter:
         :return: a Table object
         """
-        if not dbPath:
-            return self.__loadTextExMem(partitionType, partitions, tableName, partitionColumns, filePath, delimiter)
-        dbstr ='db=database("' + dbPath + '")'
-        self.run(dbstr)
-        tbl_str = '{tableName} = loadTextEx(db, "{tableName}", {partitionColumns}, "{filePath}", {delimiter})'
+        isDBPath = True
+        if "/" in dbPath or "\\" in dbPath or "dfs://" in dbPath:
+            dbstr ='db=database("' + dbPath + '")'
+        # print(dbstr)
+            self.run(dbstr)
+            tbl_str = '{tableName} = loadTextEx(db, "{tableName}", {partitionColumns}, "{filePath}", {delimiter})'
+        else:
+            isDBPath = False
+            tbl_str = '{tableName} = loadTextEx('+dbPath+', "{tableName}", {partitionColumns}, "{filePath}", {delimiter})'
         fmtDict = dict()
         fmtDict['tableName'] = tableName
         fmtDict['partitionColumns'] = str(partitionColumns)
@@ -340,19 +339,12 @@ class session(object):
         fmtDict['delimiter'] = delimiter
         # tbl_str = tableName+'=loadTextEx(db,"' + tableName + '",'+ str(partitionColumns) +',"'+ filePath+"\",'"+delimiter+"')"
         tbl_str = re.sub(' +', ' ', tbl_str.format(**fmtDict).strip())
-        # print tbl_str
+        # print(tbl_str)
         self.run(tbl_str)
-        return Table(data=tableName, dbPath=dbPath, s=self)
-
-    def __loadTextExMem(self, partitionType, partitions, tableName, partitionColumns, filePath, delimiter=","):
-        dbstr ='db = database("",%s, %s)' % (str(partitionType), str(partitions))
-        # print dbstr
-        self.run(dbstr)
-        tbl_str = tableName+'=loadTextEx(db,"' + tableName + '",'+ str(partitionColumns) +',"'+ filePath+"\",'"+delimiter+"')"
-        # print tbl_str
-        self.run(tbl_str)
-        return Table(data=tableName, s=self)
-
+        if isDBPath:
+            return Table(data=tableName, dbPath=dbPath, s=self)
+        else:
+            return Table(data=tableName, s=self)
     @property
     def read_dolphindb_obj(self):
        return read_dolphindb_obj_general(self.socket)

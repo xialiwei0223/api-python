@@ -176,7 +176,7 @@ endianness = lambda x : x;
 
 """ Unpack scalar from xxdb object """
 DATA_UNPACKER_SCALAR = dict()
-DATA_UNPACKER_SCALAR[DT_VOID] = lambda x: None
+DATA_UNPACKER_SCALAR[DT_VOID] = lambda x: swap(Struct('b').unpack(recvall(x, DATA_SIZE[DT_BYTE]))[0], DT_BOOL)
 DATA_UNPACKER_SCALAR[DT_BOOL] = lambda x: swap(Struct('b').unpack(recvall(x, DATA_SIZE[DT_BOOL]))[0], DT_BOOL)
 DATA_UNPACKER_SCALAR[DT_BYTE] = lambda x: swap(Struct('b').unpack(recvall(x, DATA_SIZE[DT_BYTE]))[0], DT_BYTE)
 DATA_UNPACKER_SCALAR[DT_SHORT] = lambda x: swap(Struct(endianness('h')).unpack(recvall(x, DATA_SIZE[DT_SHORT]))[0], DT_SHORT)
@@ -202,7 +202,7 @@ DATA_UNPACKER_SCALAR[DT_OBJECT] = lambda x: None
 
 
 DATA_UNPACKER = dict()
-DATA_UNPACKER[DT_VOID] = lambda x, y: None
+DATA_UNPACKER[DT_VOID] = lambda x, y: map(lambda z: swap(z, DT_BYTE), Struct(str(y)+'b').unpack(recvall(x, DATA_SIZE[DT_BOOL]*y)))
 DATA_UNPACKER[DT_BOOL] = lambda x, y: map(lambda z: swap(z, DT_BOOL), Struct(str(y)+'b').unpack(recvall(x, DATA_SIZE[DT_BOOL]*y)))
 DATA_UNPACKER[DT_BYTE] = lambda x, y: map(lambda z: swap(z, DT_BYTE), Struct(str(y)+'b').unpack(recvall(x, DATA_SIZE[DT_BYTE]*y)))
 DATA_UNPACKER[DT_SHORT] = lambda x, y: map(lambda z: swap(z, DT_SHORT), Struct(endianness(str(y)+'h')).unpack(recvall(x, DATA_SIZE[DT_SHORT]*y)))
@@ -227,9 +227,9 @@ DATA_UNPACKER[DT_DICTIONARY] = lambda x, y: None
 DATA_UNPACKER[DT_OBJECT] = lambda x, y: None
 DATA_UNPACKER[DT_RESOURCE] = lambda x, y: None
 
-""" dictionary of functions for making numpy arrays from xxdb vectors"""
+""" dictionary of functions for making numpy arrays from dolphindb vectors"""
 VECTOR_FACTORY = dict()
-VECTOR_FACTORY[DT_VOID] = lambda x: list
+VECTOR_FACTORY[DT_VOID] = lambda x: vec_generator(x, DT_BOOL)
 VECTOR_FACTORY[DT_BOOL] = lambda x: vec_generator(x, DT_BOOL)
 VECTOR_FACTORY[DT_BYTE] = lambda x: vec_generator(x, DT_BYTE)
 VECTOR_FACTORY[DT_SHORT] = lambda x: vec_generator(x, DT_SHORT)
