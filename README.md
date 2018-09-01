@@ -50,9 +50,9 @@ if success:
     print obj
 ```
 
-For more examples, please refer to
+For more examples, please refer to python api tutorial:
 
-http://www.dolphindb.com/help/PythonAPI.html
+https://github.com/dolphindb/Tutorials_EN/blob/master/python_api.md
 
 ###  Package introduction
 
