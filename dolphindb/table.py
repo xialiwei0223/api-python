@@ -19,7 +19,7 @@ def _getFuncName(f):
 
 
 class Table(object):
-    def __init__(self, data=None, dbPath=None, tableAliasName=None, partitions=[], inMem=False, schemaInited=False, s=None):
+    def __init__(self,dbPath=None, data=None,  tableAliasName=None, partitions=[], inMem=False, schemaInited=False, s=None):
         self.__having = None
         self.__top = None
         self.__exec = False
@@ -130,7 +130,7 @@ class Table(object):
         if colNames is not None:
             for colName in colNames:
                 self.vecs[colName] = Vector(name=colName, tableName=self.__tableName, s=self.__session)
-        self._setSelect(list(self.vecs.keys()))
+            self._setSelect(colNames)
 
     def __getattr__(self, item):
         vecs = object.__getattribute__(self, "vecs")
@@ -226,18 +226,13 @@ class Table(object):
         topTable._setTop(num)
         return topTable
 
-    def selectAsVector(self, cols=None, vectorAlias=None):
-        if cols:
-            self._setSelect(cols)
+    def selectAsVector(self, colName):
+        if colName:
+            self._setSelect(colName)
         pattern = re.compile("select", re.IGNORECASE)
-        query = pattern.sub('exec',self.showSQL())
-        if vectorAlias:
-            print query
-            self.__session.run(vectorAlias+"="+query)
-        else:
-            return self.__session.run(query)
+        query = pattern.sub('exec', self.showSQL())
+        return self.__session.run(query)
 
-    @property
     def count(self):
         return self.__session.run("exec count(*) from %s" % self.__tableName)
 
@@ -458,14 +453,28 @@ class Table(object):
         return delTable
 
     def drop(self, cols):
-        if cols is not None and len(cols):
+        if cols is not None and len(cols) and isinstance(cols, list):
             runstr = '{table}.drop!([{cols}])'
             fmtDict = dict()
             fmtDict['table'] = self.tableName()
-            fmtDict['cols'] = '"'+ '","'.join(cols) + '"'
+            fmtDict['cols'] = '"' + '","'.join(cols) + '"'
             query = re.sub(' +', ' ', runstr.format(**fmtDict).strip())
+            for col in cols:
+               for colName in self.__select:
+                   if col.lower() == colName.lower():
+                       self.__select.remove(colName)
             self.__session.run(query)
+        else:
+            runstr = '{table}.drop!([{cols}])'
+            fmtDict = dict()
+            fmtDict['table'] = self.tableName()
+            fmtDict['cols'] ="'"+cols + "'"
+            query = re.sub(' +', ' ', runstr.format(**fmtDict).strip())
+            for colName in self.__select:
+                if cols.lower() == colName.lower():
+                    self.__select.remove(colName)
         return self
+
 
     def executeAs(self, newTableName):
         self.__session.run(newTableName + "=" + self.showSQL())
@@ -791,9 +800,11 @@ class TableGroupby(object):
             funcDict = {}
             for colName, f in func.iteritems():
                 funcDict[colName] = f if isinstance(f, list) else [f]
-            selectCols = [_getFuncName(f) + '(' + x + ')' for x, funcs in funcDict.iteritems() for f in funcs if x not in self.__groupBys]
+            # selectCols = [_getFuncName(f) + '(' + x + ')' for x, funcs in funcDict.iteritems() for f in funcs if x not in self.__groupBys]
+            selectCols = [_getFuncName(f) + '(' + x + ')' for x, funcs in funcDict.iteritems() for f in funcs ]
         elif isinstance(func, str):
-            selectCols = [_getFuncName(func) + '(' + x + ')' for x in selectCols if x not in self.__groupBys]
+            # selectCols = [_getFuncName(func) + '(' + x + ')' for x in selectCols if x not in self.__groupBys]
+            selectCols = [_getFuncName(func) + '(' + x + ')' for x in selectCols]
         else:
             raise RuntimeError('invalid func format, func: aggregate function name or a list of aggregate function names'
                                ' or a dict of column label/expression->func')

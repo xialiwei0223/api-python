@@ -252,7 +252,7 @@ class session(object):
             return None
         return self.read_dolphindb_obj
 
-    def table(self, data=None, dbPath=None, tableAliasName=None, inMem=False, partitions=[], ):
+    def table(self, dbPath=None, data=None,  tableAliasName=None, inMem=False, partitions=[], ):
         """
 
         :param data: pandas dataframe, python dictionary, or DolphinDB table name
@@ -262,21 +262,52 @@ class session(object):
         :param partitions: the partition column to be loaded into memory. by default, load all
         :return: a Table object
         """
-        return Table(data=data, dbPath=dbPath, tableAliasName=tableAliasName, inMem=inMem, partitions=partitions, s=self)
+        return Table(dbPath=dbPath, data=data,  tableAliasName=tableAliasName, inMem=inMem, partitions=partitions, s=self)
 
-    def loadText(self, tableName, filePath, delimiter=",", parallel=True):
-        #loadText, ploadText
-        if parallel:
-            runstr = tableName + '= ploadText("'+filePath+ '","' + delimiter +'")'
-        else:
-            runstr = tableName + '=loadText("'+filePath+ '","' + delimiter +'")'
+    def loadText(self,  filename, delimiter=","):
+        tableName = _generate_tablename()
+        runstr = tableName + '=loadText("' + filename + '","' + delimiter + '")'
         self.run(runstr)
         return Table(data=tableName, s=self)
 
+    def ploadText(self, filename, delimiter=","):
+        tableName = _generate_tablename()
+        runstr = tableName + '= ploadText("' + filename + '","' + delimiter + '")'
+        self.run(runstr)
+        return Table(data=tableName, s=self)
 
-    def loadTableBySQL(self, tableName, dbPath, sql):
+    def loadTable(self, dbPath, tableName, partitions=[], memoryMode=False):
+        """
+        :param dbPath: DolphinDB table db path
+        :param tableName: DolphinDB table name
+        :param partitions: partitions to be loaded when specified
+        :param memoryMode: loadTable all in ram or not
+        :return:a Table object
         """
 
+        runstr = '{tableName} = loadTable("{dbPath}", "{data}",{partitions},{inMem})'
+        fmtDict = dict()
+        tbName = _generate_tablename()
+        fmtDict['tableName'] = tbName
+        fmtDict['dbPath'] = dbPath
+        fmtDict['data'] = tableName
+        if type(partitions) is list:
+            if len(partitions) and type(partitions[0]) is not str:
+                fmtDict['partitions'] = ('[' + ','.join(str(x) for x in partitions) + ']') if len(partitions) else ""
+            else:
+                fmtDict['partitions'] = ('["' + '","'.join(partitions) + '"]') if len(partitions) else ""
+        else:
+            if type(partitions) is str:
+                fmtDict['partitions'] = '"' + partitions + '"'
+            else:
+                fmtDict['partitions'] = partitions
+        fmtDict['inMem'] = str(memoryMode).lower()
+        runstr = re.sub(' +', ' ', runstr.format(**fmtDict).strip())
+        self.run(runstr)
+        return Table(data=tbName, s=self)
+
+    def loadTableBySQL(self, dbPath, tableName, sql):
+        """
         :param tableName: DolphinDB table name
         :param dbPath: DolphinDB table db path
         :param sql: sql query to load the data
@@ -284,12 +315,17 @@ class session(object):
         """
         # loadTableBySQL
         runstr = 'db=database("' + dbPath + '")'
+        # print(runstr)
         self.run(runstr)
         runstr = tableName + '= db.loadTable("%s")' % tableName
+        # print(runstr)
         self.run(runstr)
         runstr = tableName + "=loadTableBySQL(<%s>)" % sql
+        # runstr =  sql
+        # print(runstr)
         self.run(runstr)
         return Table(data=tableName, s=self)
+
 
     def database(self,dbName, partitionType=None, partitions=None, dbPath=None):
         """
@@ -313,6 +349,20 @@ class session(object):
                 dbstr =  dbName +'=database("")'
         self.run(dbstr)
         return
+
+    def existsDatabase(self, dbUrl):
+        return self.run("existsDatabase('%s')" % dbUrl)
+
+    def existsTable(self, dbUrl, tableName):
+        return self.run("existsTable('%s','%s')" % (dbUrl, tableName))
+
+    def dropDatabase(self, dbName):
+        self.run("dropDatabase('" + dbName + "')")
+
+    def dropTable(self,dbUrl, tableName):
+        db = _generate_dbname()
+        self.run(db + '=database("' + dbUrl + '")')
+        self.run("dropTable(%s,'%s')" % (db,tableName))
 
     def loadTextEx(self,tableName="", dbPath="",  partitionColumns=[], filePath="", delimiter=","):
         """
