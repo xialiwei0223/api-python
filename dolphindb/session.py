@@ -12,9 +12,9 @@ from dolphindb.table import Table
 from threading import Thread, Lock
 
 def _generate_tablename():
-    return "T" + uuid.uuid4().hex[:8]
+    return "TMP_TBL_" + uuid.uuid4().hex[:8]
 def _generate_dbname():
-    return "DB" + uuid.uuid4().hex[:8]+"DB"
+    return "TMP_DB_" + uuid.uuid4().hex[:8]+"DB"
 
 
 class session(object):
@@ -147,8 +147,9 @@ class session(object):
             if not self.sessionID == headers[0]:
                 print ("old sessionID %s is invalid after reconnection; new sessionID is %s\n" % (self.sessionID, headers[0]))
                 self.sessionID = headers[0]
+        sid, obj_num, _ = headers
         msg = socket_util.readline(self.socket)
-        if msg != 'OK':
+        if msg != 'OK' and obj_num==0:
             raise Exception('Server Exception', msg)
         return None
 
@@ -427,12 +428,32 @@ class session(object):
     def existsTable(self, dbUrl, tableName):
         return self.run("existsTable('%s','%s')" % (dbUrl,tableName))
 
-    def dropDatabase(self, dbName):
-        self.run("dropDatabase('"+dbName+"')")
+    def dropDatabase(self, dbPath):
+        self.run("dropDatabase('" + dbPath + "')")
 
-    def dropTable(self,dbUrl, tableName):
+    def dropPartition(self, dbPath, partitionPaths, tableName=None):
+        """
+
+        :param dbPath: a DolphinDB database path
+        :param partitionPaths:  a string or a list of strings. It indicates the directory of a single partition or a list of directories for multiple partitions under the database folder. It must start with "/"
+        :param tableName:a string indicating a table name.
+        :return:
+        """
         db = _generate_dbname()
-        self.run(db + '=database("' + dbUrl + '")')
+        self.run(db + '=database("' + dbPath + '")')
+        if isinstance(partitionPaths, list):
+            pths = '"'+'","'.join(partitionPaths)+'"'
+        else:
+            pths = partitionPaths
+
+        if tableName:
+            self.run("dropPartition(%s,[%s],%s)" % (db, pths, tableName))
+        else:
+            self.run("dropPartition(%s,[%s])" % (db, pths))
+
+    def dropTable(self, dbPath, tableName):
+        db = _generate_dbname()
+        self.run(db + '=database("' + dbPath + '")')
         self.run("dropTable(%s,'%s')" % (db,tableName))
 
     def loadTextEx(self, dbPath="", tableName="",  partitionColumns=[], filePath="", delimiter=","):
@@ -449,11 +470,12 @@ class session(object):
             dbstr ='db=database("' + dbPath + '")'
         # print(dbstr)
             self.run(dbstr)
-            tbl_str = '{tableName} = loadTextEx(db, "{tableName}", {partitionColumns}, "{filePath}", {delimiter})'
+            tbl_str = '{tableNameNEW} = loadTextEx(db, "{tableName}", {partitionColumns}, "{filePath}", {delimiter})'
         else:
             isDBPath = False
-            tbl_str = '{tableName} = loadTextEx('+dbPath+', "{tableName}", {partitionColumns}, "{filePath}", {delimiter})'
+            tbl_str = '{tableNameNEW} = loadTextEx('+dbPath+', "{tableName}", {partitionColumns}, "{filePath}", {delimiter})'
         fmtDict = dict()
+        fmtDict['tableNameNEW'] = _generate_tablename()
         fmtDict['tableName'] = tableName
         fmtDict['partitionColumns'] = str(partitionColumns)
         fmtDict['filePath'] = filePath
@@ -463,9 +485,9 @@ class session(object):
         # print(tbl_str)
         self.run(tbl_str)
         if isDBPath:
-            return Table(data=tableName, dbPath=dbPath, s=self)
+            return Table(data=fmtDict['tableName'] , dbPath=dbPath, s=self)
         else:
-            return Table(data=tableName, s=self)
+            return Table(data=fmtDict['tableNameNEW'], s=self)
 
     def undef(self, varName, varType):
         undef_str = 'undef("{varName}", {varType})'

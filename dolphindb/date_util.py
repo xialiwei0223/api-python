@@ -12,6 +12,7 @@ monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 leapMonthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 START_DATE = date(2000, 0o01, 0o01)
 
+
 class temporal(object):
     def __init__(self, val):
         """xxdb int/long representation of temporal objects"""

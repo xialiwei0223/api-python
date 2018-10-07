@@ -9,7 +9,7 @@ import inspect
 import unicodedata
 
 def _generate_tablename():
-    return "T" + uuid.uuid4().hex[:8]
+    return "TMP_TBL_" + uuid.uuid4().hex[:8]
 
 
 def _getFuncName(f):
@@ -42,6 +42,8 @@ class Table(object):
                 'Column names must be passed in as a list')
         if isinstance(data, dict) or isinstance(data, DataFrame):
             df = data if isinstance(data, DataFrame) else DataFrame(data)
+            if  not self.__tableName.startswith("TMP_TBL_"):
+                self._setTableName(_generate_tablename())
             self.__session.upload({self.__tableName: df})
             self.vecs = {}
 
@@ -390,7 +392,8 @@ class Table(object):
         joinTable._setLeftTable(self.tableName())
         joinTable._setRightTable(right.tableName())
         joinTable._setTableName(finalTableName)
-        joinTable._setSelect(leftSelectCols + rightSelectCols)
+        #joinTable._setSelect(leftSelectCols + rightSelectCols)
+        joinTable._setSelect('*')
         if merge_for_update:
             joinTable.setMergeForUpdate(True)
         return joinTable
@@ -448,7 +451,8 @@ class Table(object):
         joinTable._setLeftTable(self.tableName())
         joinTable._setRightTable(right.tableName())
         joinTable._setTableName(finalTableName)
-        joinTable._setSelect(leftSelectCols + rightSelectCols)
+        joinTable._setSelect('*')
+        # joinTable._setSelect(leftSelectCols + rightSelectCols)
         return joinTable
 
     def merge_window(self, right, leftBound=None, rightBound=None, aggFunctions=None, on=None, left_on=None, right_on=None, prevailing=False):
@@ -501,9 +505,9 @@ class Table(object):
         rightColumnNames = ''.join(['`' + x for x in right_on])
 
         if ifPrevailing:
-            finalTableName = 'pwj(%s,%s,%d:%d,%s,%s,%s)' % (leftTableName, rightTableName, leftBound, rightBound, aggFunctions, leftColumnNames, rightColumnNames)
+            finalTableName = 'pwj(%s,%s,%d:%d,%s,%s,%s)' % (leftTableName, rightTableName, leftBound, rightBound, '<'+aggFunctions+'>', leftColumnNames, rightColumnNames)
         else:
-            finalTableName = 'wj(%s,%s,%d:%d,%s,%s,%s)' % (leftTableName, rightTableName, leftBound, rightBound, aggFunctions, leftColumnNames, rightColumnNames)
+            finalTableName = 'wj(%s,%s,%d:%d,%s,%s,%s)' % (leftTableName, rightTableName, leftBound, rightBound, '<'+aggFunctions+'>', leftColumnNames, rightColumnNames)
         print(finalTableName)
         self._init_schema()
         right._init_schema()

@@ -162,6 +162,19 @@ def table_generator(socket):
             raise Exception("column " + colNames[i] + "in table " + tableName + " must be a vector!")
         if data_type in [DT_SYMBOL, DT_STRING]:
             col = table_str_col_generator(socket)
+        elif data_type in [DT_DATE, DT_MONTH, DT_MINUTE, DT_TIME, DT_TIMESTAMP, DT_SECOND, DT_NANOTIME, DT_NANOTIMESTAMP, DT_DATETIME]:
+            col = VECTOR_FACTORY[data_type](socket)
+            if data_type in [DT_DATE, DT_MONTH]:
+                col = [np.datetime64(d.to_date()) for d in col]
+            elif data_type in [DT_DATETIME, DT_TIMESTAMP]:
+                col = np.datetime64(d.to_datetime() for d in col)
+            elif data_type in [DT_TIME, DT_SECOND, DT_MINUTE]:
+                col = np.datetime64(d.to_time() for d in col)
+            elif data_type in [DT_NANOTIME, DT_DATETIME64]:
+                # col = np.datetime64(d.to_nanotime() for d in col)
+                pass
+            elif data_type in [DT_NANOTIMESTAMP]:
+                col = np.datetime64(d.to_nanotimestamp() for d in col)
         else:
             col = VECTOR_FACTORY[data_type](socket)
         df[colNames[i]] = col
@@ -355,4 +368,4 @@ DATA_PACKER2D[DT_DATETIME] = lambda x: Struct(endianness("%di" % x.size)).pack(*
 DATA_PACKER2D[DT_TIMESTAMP] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
 DATA_PACKER2D[DT_NANOTIME] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
 DATA_PACKER2D[DT_NANOTIMESTAMP] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
-DATA_PACKER[DT_DATETIME64] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
+DATA_PACKER[DT_DATETIME64] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:y, x.T.flat))
