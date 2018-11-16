@@ -9,7 +9,6 @@ from dolphindb.settings import *
 from dolphindb.type_util import determine_form_type
 from dolphindb.pair import Pair
 from dolphindb.table import Table
-from threading import Thread, Lock
 
 def _generate_tablename():
     return "TMP_TBL_" + uuid.uuid4().hex[:8]
@@ -19,9 +18,9 @@ def _generate_dbname():
 
 class session(object):
     """
-    dolphindb api class
+    xxdb api class
     connect: initiate socket connection
-    run: execute dolphindb script and return corresponding python objects
+    run: execute xxdb script and return corresponding python objects
     1: Scalar variable returns a python scalar
     2: Vector object returns numpy array
     3: Table object returns  a pandas data frame
@@ -32,11 +31,10 @@ class session(object):
         self.host = host
         self.port = port
         self.userid = userid
-        self.password=password
+        self.password = password
         self.sessionID = None
         self.remoteLittleEndian = None
         self.encrypted = False
-        self.mutex=Lock()
         if self.host is not None and self.port is not None:
             self.connect(host, port)
 
@@ -47,7 +45,7 @@ class session(object):
         self.password = password
         self.encrypted = False
         body = "connect\n"
-        msg = "API 0 "+str(len(body))+'\n'+body
+        msg = "API 0 " + str(len(body)) + '\n' + body
         try:
             self.socket.connect((host, port))
             sent = socket_util.sendall(self.socket, msg)
@@ -56,13 +54,13 @@ class session(object):
                 headers = header.split()
                 if len(headers) != 3:
                     raise Exception('Header Length Incorrect', header)
-                sid, _ , is_remote = headers
+                sid, _, is_remote = headers
                 msg = socket_util.readline(self.socket)
                 if msg != 'OK':
                     raise Exception('Connection failed', msg, b"")
                 self.sessionID = sid
                 self.remoteLittleEndian = False if is_remote == '0' else True
-                data_factory.endianness = '>'.__add__ if is_remote == '0' else  '<'.__add__
+                data_factory.endianness = '>'.__add__ if is_remote == '0' else '<'.__add__
                 if userid and password and len(userid) and len(password):
                     self.signon()
 
@@ -84,19 +82,17 @@ class session(object):
             raise
         return True
 
-    def login(self,userid, password, enableEncryption):
-        self.mutex.acquire()
+    def login(self, userid, password, enableEncryption):
         try:
             self.userid = userid
             self.password = password
             self.encrypted = enableEncryption
             self.signon()
-        finally:
-            self.mutex.release()
-
+        except Exception:
+            print("login exception!")
     def signon(self):
         if len(self.userid) and len(self.password):
-            self.run("login('%s','%s')"%(self.userid, self.password))
+            self.run("login('%s','%s')" % (self.userid, self.password))
 
     def close(self):
         self.socket.close()
@@ -107,7 +103,7 @@ class session(object):
 
     def upload(self, nameObjectDict):
         if not isinstance(nameObjectDict, dict) or not nameObjectDict:
-            print ('\n Empty name/object mapping received - no upload\n')
+            print '\n Empty name/object mapping received - no upload\n'
             return None
         if not self.sessionID:
             raise Exception('Connection has not been established yet; please call function connect!')
@@ -115,7 +111,6 @@ class session(object):
         """upload variable names """
         body = "variable\n"
         objects = []
-        pyObj = []
         for key in nameObjectDict:
             if not isinstance(key, str):
                 raise ValueError("variable name" + key + " is not a string")
@@ -130,11 +125,11 @@ class session(object):
         body += "1" if self.remoteLittleEndian else "0"
         message = "API " + self.sessionID + " " + str(len(body)) + '\n' + body
         for o in objects:
-            pyObj.append(self.write_python_obj(o, message))
+            message = self.write_python_obj(o, message)
         reconnected = False
         try:
-            totalsent = socket_util.sendall(self.socket, message,pyObj)
-        except IOError as e:
+            totalsent = socket_util.sendall(self.socket, message)
+        except IOError, e:
             traceback.print_exc(e)
             reconnected = self._reconnect(message)
 
@@ -147,21 +142,19 @@ class session(object):
             if not self.sessionID == headers[0]:
                 print ("old sessionID %s is invalid after reconnection; new sessionID is %s\n" % (self.sessionID, headers[0]))
                 self.sessionID = headers[0]
-        sid, obj_num, _ = headers
         msg = socket_util.readline(self.socket)
-        if msg != 'OK' and obj_num==0:
+        if msg != 'OK':
             raise Exception('Server Exception', msg)
         return None
 
     def run(self, script, *args):
-        # print("run")
 
         if not script or len(script.strip()) == 0:
             raise Exception('Empty Script Received', script)
         if not self.sessionID:
             raise Exception('Connection has not been established yet; please call function connect!')
+
         """msg send"""
-        objs = []
         if len(args):
             """ function with arguments"""
             body = "function\n" + script
@@ -169,129 +162,11 @@ class session(object):
             body += "1" if self.remoteLittleEndian else "0"
             message = "API " + self.sessionID + " " + str(len(body)) + '\n' + body
             for arg in args:
-                objs.append(self.write_python_obj(arg, message))
+                message = self.write_python_obj(arg, message)
         else:
             """pure script"""
-            body = "script\n" + script
-            message = "API " + self.sessionID + " " + str(len(body)) + '\n' + body
-        reconnected = False
-        try:
-            # print(message)
-            # print(objs)
-            socket_util.sendall(self.socket, message, objs)
-        except IOError:
-            reconnected = self.reconnect(message)
-
-        """msg receive"""
-        header = socket_util.readline(self.socket)
-        while header == "MSG":
-            socket_util.read_string(self.socket)  # python API doesn't support progress listener
-            header = socket_util.readline(self.socket)
-
-        headers = header.split()
-        if len(headers) != 3:
-            raise Exception('Header Length Incorrect', header)
-        if reconnected:
-            if not self.sessionID == headers[0]:
-                print("old sessionID %s is invalid after reconnection; new sessionID is %s\n" % (
-                self.sessionID, headers[0]))
-                self.sessionID = headers[0]
-
-        sid, obj_num, _ = headers
-        msg = socket_util.readline(self.socket)
-        if msg != 'OK':
-            raise Exception('Server Exception', msg)
-        if int(obj_num) == 0:
-            return None
-        return self.read_dolphindb_obj
-
-    def table(self, data, dbPath=None):
-        return Table(data=data, dbPath=dbPath, s=self)
-
-    @property
-    def read_dolphindb_obj(self):
-        # print("here")
-        return read_dolphindb_obj_general(self.socket)
-
-    def write_python_obj(self, obj, message):
-        (dbForm, dbType) = determine_form_type(obj)
-        tmp = b""
-
-        # special handling of numpy datetime64[ns]
-        # internally we don't have this type
-        # we use nanotimestamp for it
-        # however, packing value is different from other datatypes
-        # so we handle it seperately
-        if dbType == 100:
-            flag = (dbForm << 8) + DT_NANOTIMESTAMP
-        else:
-            flag = (dbForm << 8) + dbType
-        tmp += (DATA_PACKER_SCALAR[DT_SHORT](flag))
-
-        if dbType == DT_ANY and isinstance(obj, list):  # any vector written
-            tmp += DATA_PACKER_SCALAR[DT_INT](len(obj))
-            tmp += DATA_PACKER_SCALAR[DT_INT](1)
-            for val in obj:
-                tmp += self.write_python_obj(val, message)
-        elif isinstance(obj, list):  # vector written from list
-            tmp += DATA_PACKER_SCALAR[DT_INT](len(obj))
-            tmp += DATA_PACKER_SCALAR[DT_INT](1)
-            for val in obj:
-                # print(dbType)
-                # print(type(val))
-                tmp += DATA_PACKER_SCALAR[dbType](val)
-        elif isinstance(obj, dict):
-            tmp += self.write_python_obj(list(obj.keys()), message)
-            tmp += self.write_python_obj(list(obj.values()), message)
-        elif isinstance(obj, np.ndarray) and dbForm == DF_VECTOR:  # vector written from numpy array
-            tmp += DATA_PACKER_SCALAR[DT_INT](obj.size)
-            tmp += DATA_PACKER_SCALAR[DT_INT](1)
-            tmp += DATA_PACKER[dbType](obj)
-        elif isinstance(obj, Pair):
-            tmp += DATA_PACKER_SCALAR[DT_INT](2)
-            tmp += DATA_PACKER_SCALAR[DT_INT](1)
-            tmp += DATA_PACKER_SCALAR[dbType](obj.a)
-            tmp += DATA_PACKER_SCALAR[dbType](obj.b)
-        elif dbForm == DF_SET:
-            npArray = np.array((list(obj)))
-            tmp += self.write_python_obj(npArray, message)
-        elif dbForm == DF_MATRIX:
-            tmp += b'\x00'  # no row and colum labels
-            tmp += (DATA_PACKER_SCALAR[DT_SHORT](flag))  # a weird interface for matrix
-            tmp += DATA_PACKER_SCALAR[DT_INT](obj.shape[0])
-            tmp += DATA_PACKER_SCALAR[DT_INT](obj.shape[1])
-            tmp += DATA_PACKER2D[dbType](obj)
-        elif dbForm == DF_TABLE:
-            tmp += DATA_PACKER_SCALAR[DT_INT](obj.values.shape[0])
-            tmp += DATA_PACKER_SCALAR[DT_INT](obj.values.shape[1])
-            tmp += b'\x00'
-            tmp += DATA_PACKER[DT_STRING](list(obj.columns))
-            for name in obj.columns:
-                tmp += self.write_python_obj(obj[name].values, message)
-        else:
-            tmp += (DATA_PACKER_SCALAR[dbType](obj))
-        return tmp
-
-    def rpc(self,function_name, *args):
-        """
-
-        :param function_name: remote function call name
-        :param args: arguments for remote function
-        :return: return remote function call result
-        """
-        """msg send"""
-        # if len(args):
-        """ function with arguments"""
-        body = "function\n" + function_name
-        body += "\n" + str(len(args)) + "\n"
-        body += "1" if self.remoteLittleEndian else "0"
-        message = "API " + self.sessionID + " " + str(len(body)) + '\n' + body
-        for arg in args:
-            message = self.write_python_obj(arg, message)
-        # else:
-        #     """pure script"""
-        #     body = "script\n"+function_name
-        #     message = "API "+self.sessionID + " " + str(len(body)) + '\n' + body
+            body = "script\n"+script
+            message = "API "+self.sessionID + " " + str(len(body)) + '\n' + body
 
         #print(message)
 
@@ -321,9 +196,129 @@ class session(object):
             raise Exception('Server Exception', msg)
         if int(obj_num) == 0:
             return None
+        return self.read_xxdb_obj
+
+    def table(self, data, dbPath=None):
+        return Table(data=data, dbPath=dbPath, s=self)
+
+    @property
+    def read_xxdb_obj(self):
+       return read_xxdb_obj_general(self.socket)
+
+    def write_python_obj(self, obj, message):
+        (dbForm, dbType) = determine_form_type(obj)
+
+        #special handling of numpy datetime64[ns]
+        #internally we don't have this type
+        #we use nanotimestamp for it
+        #however, packing value is different from other datatypes
+        #so we handle it seperately
+        if dbType == 100:
+            flag = (dbForm << 8) + DT_NANOTIMESTAMP
+            dbType = DT_NANOTIMESTAMP
+            if isinstance(obj, list) or (isinstance(obj, np.ndarray) and dbForm == DF_VECTOR):
+                obj = NanoTimestamp.from_vec_datetime64(obj)
+            else:
+                obj = NanoTimestamp.from_datetime64(obj)
+        else:
+            flag = (dbForm << 8) + dbType
+        message += (DATA_PACKER_SCALAR[DT_SHORT](flag))
+
+        if dbType == DT_ANY and isinstance(obj, list): # any vector written
+            message += DATA_PACKER_SCALAR[DT_INT](len(obj))
+            message += DATA_PACKER_SCALAR[DT_INT](1)
+            for val in obj:
+                message = self.write_python_obj(val, message)
+        elif isinstance(obj, list):  # vector written from list
+            message += DATA_PACKER_SCALAR[DT_INT](len(obj))
+            message += DATA_PACKER_SCALAR[DT_INT](1)
+            for val in obj:
+                message += DATA_PACKER_SCALAR[dbType](val)
+        elif isinstance(obj, dict):
+            message = self.write_python_obj(obj.keys(), message)
+            message = self.write_python_obj(obj.values(), message)
+        elif isinstance(obj, np.ndarray) and dbForm == DF_VECTOR: # vector written from numpy array
+            message += DATA_PACKER_SCALAR[DT_INT](obj.size)
+            message += DATA_PACKER_SCALAR[DT_INT](1)
+            message += DATA_PACKER[dbType](obj)
+        elif isinstance(obj, Pair):
+            message += DATA_PACKER_SCALAR[DT_INT](2)
+            message += DATA_PACKER_SCALAR[DT_INT](1)
+            message += DATA_PACKER_SCALAR[dbType](obj.a)
+            message += DATA_PACKER_SCALAR[dbType](obj.b)
+        elif dbForm == DF_SET:
+            npArray = np.array((list(obj)))
+            message = self.write_python_obj(npArray, message)
+        elif dbForm == DF_MATRIX:
+            message += '\x00'  # no row and colum labels
+            message += (DATA_PACKER_SCALAR[DT_SHORT](flag)) #  a weird interface for matrix
+            message += DATA_PACKER_SCALAR[DT_INT](obj.shape[0])
+            message += DATA_PACKER_SCALAR[DT_INT](obj.shape[1])
+            message += DATA_PACKER2D[dbType](obj)
+        elif dbForm == DF_TABLE:
+            message += DATA_PACKER_SCALAR[DT_INT](obj.values.shape[0])
+            message += DATA_PACKER_SCALAR[DT_INT](obj.values.shape[1])
+            message += '\x00'
+            message += DATA_PACKER[DT_STRING](list(obj.columns))
+            for name in obj.columns:
+                message = self.write_python_obj(obj[name].values, message)
+        else:
+            message += DATA_PACKER_SCALAR[dbType](obj)
+        return message
+
+    def rpc(self, function_name, *args):
+        """
+
+        :param function_name: remote function call name
+        :param args: arguments for remote function
+        :return: return remote function call result
+        """
+        """msg send"""
+        # if len(args):
+        """ function with arguments"""
+        body = "function\n" + function_name
+        body += "\n" + str(len(args)) + "\n"
+        body += "1" if self.remoteLittleEndian else "0"
+        message = "API " + self.sessionID + " " + str(len(body)) + '\n' + body
+        for arg in args:
+            message = self.write_python_obj(arg, message)
+        # else:
+        #     """pure script"""
+        #     body = "script\n"+function_name
+        #     message = "API "+self.sessionID + " " + str(len(body)) + '\n' + body
+
+        # print(message)
+
+        reconnected = False
+        try:
+            socket_util.sendall(self.socket, message)
+        except IOError:
+            reconnected = self.reconnect(message)
+
+        """msg receive"""
+        header = socket_util.readline(self.socket)
+        while header == "MSG":
+            socket_util.read_string(self.socket)  # python API doesn't support progress listener
+            header = socket_util.readline(self.socket)
+
+        headers = header.split()
+        if len(headers) != 3:
+            raise Exception('Header Length Incorrect', header)
+        if reconnected:
+            if not self.sessionID == headers[0]:
+                print ("old sessionID %s is invalid after reconnection; new sessionID is %s\n" % (
+                self.sessionID, headers[0]))
+                self.sessionID = headers[0]
+
+        sid, obj_num, _ = headers
+        msg = socket_util.readline(self.socket)
+        if msg != 'OK':
+            raise Exception('Server Exception', msg)
+        if int(obj_num) == 0:
+            return None
         return self.read_dolphindb_obj
 
-    def table(self, dbPath=None, data=None,  tableAliasName=None, inMem=False, partitions=[], ):
+    def table(self, dbPath=None, data=None, tableAliasName=None, inMem=False, partitions=[], ):
         """
 
         :param data: pandas dataframe, python dictionary, or DolphinDB table name
@@ -333,9 +328,10 @@ class session(object):
         :param partitions: the partition column to be loaded into memory. by default, load all
         :return: a Table object
         """
-        return Table(dbPath=dbPath, data=data,  tableAliasName=tableAliasName, inMem=inMem, partitions=partitions, s=self)
+        return Table(dbPath=dbPath, data=data, tableAliasName=tableAliasName, inMem=inMem, partitions=partitions,
+                     s=self)
 
-    def loadText(self,  filename, delimiter=","):
+    def loadText(self, filename, delimiter=","):
         tableName = _generate_tablename()
         runstr = tableName + '=loadText("' + filename + '","' + delimiter + '")'
         self.run(runstr)
@@ -347,7 +343,7 @@ class session(object):
         self.run(runstr)
         return Table(data=tableName, s=self)
 
-    def loadTable(self,tableName,  dbPath=None, partitions=[], memoryMode=False):
+    def loadTable(self, tableName, dbPath=None, partitions=[], memoryMode=False):
         """
         :param dbPath: DolphinDB table db path
         :param tableName: DolphinDB table name
@@ -364,7 +360,8 @@ class session(object):
             fmtDict['data'] = tableName
             if type(partitions) is list:
                 if len(partitions) and type(partitions[0]) is not str:
-                    fmtDict['partitions'] = ('[' + ','.join(str(x) for x in partitions) + ']') if len(partitions) else ""
+                    fmtDict['partitions'] = ('[' + ','.join(str(x) for x in partitions) + ']') if len(
+                        partitions) else ""
                 else:
                     fmtDict['partitions'] = ('["' + '","'.join(partitions) + '"]') if len(partitions) else ""
             else:
@@ -399,7 +396,7 @@ class session(object):
         self.run(runstr)
         return Table(data=tableName, s=self)
 
-    def database(self,dbName, partitionType=None, partitions=None, dbPath=None):
+    def database(self, dbName, partitionType=None, partitions=None, dbPath=None):
         """
 
         :param dbName: database variable Name on DolphinDB Server
@@ -411,14 +408,14 @@ class session(object):
         partition_str = str(partitions)
         if partitionType:
             if dbPath:
-                dbstr =  dbName + '=database("'+dbPath+'",' + str(partitionType) + "," + partition_str + ")"
+                dbstr = dbName + '=database("' + dbPath + '",' + str(partitionType) + "," + partition_str + ")"
             else:
-                dbstr =  dbName +'=database("",' + str(partitionType) + "," + partition_str + ")"
+                dbstr = dbName + '=database("",' + str(partitionType) + "," + partition_str + ")"
         else:
             if dbPath:
-                dbstr =  dbName +'=database("' + dbPath + '")'
+                dbstr = dbName + '=database("' + dbPath + '")'
             else:
-                dbstr =  dbName +'=database("")'
+                dbstr = dbName + '=database("")'
         self.run(dbstr)
         return
 
@@ -426,7 +423,7 @@ class session(object):
         return self.run("existsDatabase('%s')" % dbUrl)
 
     def existsTable(self, dbUrl, tableName):
-        return self.run("existsTable('%s','%s')" % (dbUrl,tableName))
+        return self.run("existsTable('%s','%s')" % (dbUrl, tableName))
 
     def dropDatabase(self, dbPath):
         self.run("dropDatabase('" + dbPath + "')")
@@ -442,7 +439,7 @@ class session(object):
         db = _generate_dbname()
         self.run(db + '=database("' + dbPath + '")')
         if isinstance(partitionPaths, list):
-            pths = '"'+'","'.join(partitionPaths)+'"'
+            pths = '"' + '","'.join(partitionPaths) + '"'
         else:
             pths = partitionPaths
 
@@ -454,9 +451,9 @@ class session(object):
     def dropTable(self, dbPath, tableName):
         db = _generate_dbname()
         self.run(db + '=database("' + dbPath + '")')
-        self.run("dropTable(%s,'%s')" % (db,tableName))
+        self.run("dropTable(%s,'%s')" % (db, tableName))
 
-    def loadTextEx(self, dbPath="", tableName="",  partitionColumns=[], filePath="", delimiter=","):
+    def loadTextEx(self, dbPath="", tableName="", partitionColumns=[], filePath="", delimiter=","):
         """
         :param tableName: loadTextEx table name
         :param dbPath: database path, when dbPath is empty, it is in-memory database
@@ -467,13 +464,13 @@ class session(object):
         """
         isDBPath = True
         if "/" in dbPath or "\\" in dbPath or "dfs://" in dbPath:
-            dbstr ='db=database("' + dbPath + '")'
-        # print(dbstr)
+            dbstr = 'db=database("' + dbPath + '")'
+            # print(dbstr)
             self.run(dbstr)
             tbl_str = '{tableNameNEW} = loadTextEx(db, "{tableName}", {partitionColumns}, "{filePath}", {delimiter})'
         else:
             isDBPath = False
-            tbl_str = '{tableNameNEW} = loadTextEx('+dbPath+', "{tableName}", {partitionColumns}, "{filePath}", {delimiter})'
+            tbl_str = '{tableNameNEW} = loadTextEx(' + dbPath + ', "{tableName}", {partitionColumns}, "{filePath}", {delimiter})'
         fmtDict = dict()
         fmtDict['tableNameNEW'] = _generate_tablename()
         fmtDict['tableName'] = tableName
@@ -485,7 +482,7 @@ class session(object):
         # print(tbl_str)
         self.run(tbl_str)
         if isDBPath:
-            return Table(data=fmtDict['tableName'] , dbPath=dbPath, s=self)
+            return Table(data=fmtDict['tableName'], dbPath=dbPath, s=self)
         else:
             return Table(data=fmtDict['tableNameNEW'], s=self)
 
@@ -504,63 +501,3 @@ class session(object):
             self.run("pnodeRun(clearAllCache)")
         else:
             self.run("clearAllCache()")
-
-    # @property
-    # def read_dolphindb_obj(self):
-    #    return read_dolphindb_obj_general(self.socket)
-    #
-    # def write_python_obj(self, obj, message):
-    #     (dbForm, dbType) = determine_form_type(obj)
-    #
-    #     #special handling of numpy datetime64[ns]
-    #     #internally we don't have this type
-    #     #we use nanotimestamp for it
-    #     #however, packing value is different from other datatypes
-    #     #so we handle it seperately
-    #     if dbType == 100:
-    #         flag = (dbForm << 8) + DT_NANOTIMESTAMP
-    #     else:
-    #         flag = (dbForm << 8) + dbType
-    #     message += (DATA_PACKER_SCALAR[DT_SHORT](flag))
-    #
-    #     if dbType == DT_ANY and isinstance(obj, list): # any vector written
-    #         message += DATA_PACKER_SCALAR[DT_INT](len(obj))
-    #         message += DATA_PACKER_SCALAR[DT_INT](1)
-    #         for val in obj:
-    #             message = self.write_python_obj(val, message)
-    #     elif isinstance(obj, list):  # vector written from list
-    #         message += DATA_PACKER_SCALAR[DT_INT](len(obj))
-    #         message += DATA_PACKER_SCALAR[DT_INT](1)
-    #         for val in obj:
-    #             message += DATA_PACKER_SCALAR[dbType](val)
-    #     elif isinstance(obj, dict):
-    #         message = self.write_python_obj(obj.keys(), message)
-    #         message = self.write_python_obj(obj.values(), message)
-    #     elif isinstance(obj, np.ndarray) and dbForm == DF_VECTOR: # vector written from numpy array
-    #         message += DATA_PACKER_SCALAR[DT_INT](obj.size)
-    #         message += DATA_PACKER_SCALAR[DT_INT](1)
-    #         message += DATA_PACKER[dbType](obj)
-    #     elif isinstance(obj, Pair):
-    #         message += DATA_PACKER_SCALAR[DT_INT](2)
-    #         message += DATA_PACKER_SCALAR[DT_INT](1)
-    #         message += DATA_PACKER_SCALAR[dbType](obj.a)
-    #         message += DATA_PACKER_SCALAR[dbType](obj.b)
-    #     elif dbForm == DF_SET:
-    #         npArray = np.array((list(obj)))
-    #         message = self.write_python_obj(npArray, message)
-    #     elif dbForm == DF_MATRIX:
-    #         message += '\x00'  # no row and colum labels
-    #         message += (DATA_PACKER_SCALAR[DT_SHORT](flag)) #  a weird interface for matrix
-    #         message += DATA_PACKER_SCALAR[DT_INT](obj.shape[0])
-    #         message += DATA_PACKER_SCALAR[DT_INT](obj.shape[1])
-    #         message += DATA_PACKER2D[dbType](obj)
-    #     elif dbForm == DF_TABLE:
-    #         message += DATA_PACKER_SCALAR[DT_INT](obj.values.shape[0])
-    #         message += DATA_PACKER_SCALAR[DT_INT](obj.values.shape[1])
-    #         message += '\x00'
-    #         message += DATA_PACKER[DT_STRING](list(obj.columns))
-    #         for name in obj.columns:
-    #             message = self.write_python_obj(obj[name].values, message)
-    #     else:
-    #         message += DATA_PACKER_SCALAR[dbType](obj)
-    #     return message

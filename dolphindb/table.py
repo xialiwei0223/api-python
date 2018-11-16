@@ -3,7 +3,7 @@ from dolphindb.vector import Vector
 from dolphindb.vector import FilterCond
 import uuid
 import copy
-import builtins
+import __builtin__
 import re
 import inspect
 import unicodedata
@@ -18,13 +18,11 @@ def _getFuncName(f):
     else:
         return f.__name__
 
-
 def normalize_caseless(text):
     return unicodedata.normalize("NFKD", text.casefold())
 
-
 class Table(object):
-    def __init__(self, dbPath=None, data=None,  tableAliasName=None, partitions=[], inMem=False, schemaInited=False,
+    def __init__(self, dbPath=None, data=None, tableAliasName=None, partitions=[], inMem=False, schemaInited=False,
                  s=None):
         self.__having = None
         self.__top = None
@@ -42,7 +40,7 @@ class Table(object):
                 'Column names must be passed in as a list')
         if isinstance(data, dict) or isinstance(data, DataFrame):
             df = data if isinstance(data, DataFrame) else DataFrame(data)
-            if  not self.__tableName.startswith("TMP_TBL_"):
+            if not self.__tableName.startswith("TMP_TBL_"):
                 self._setTableName(_generate_tablename())
             self.__session.upload({self.__tableName: df})
             self.vecs = {}
@@ -130,16 +128,12 @@ class Table(object):
             cols = list(cols)
         if isinstance(cols, list) is False:
             cols = [cols]
-
         self.__select = cols
 
     def _init_schema(self):
         if self.__schemaInited is True:
             return
-        #colNames = self.__session.run("colNames(%s)" % self.__tableName)
-        schema = self.__session.run("schema(%s)" % self.__tableName)  # type: dict
-        colDefs = schema.get('colDefs')  # type: DataFrame
-        colNames = colDefs["name"].tolist()
+        colNames = self.__session.run("colNames(%s)" % self.__tableName)
         self.vecs = {}
         self.__columns = colNames
         if colNames is not None:
@@ -213,7 +207,7 @@ class Table(object):
         return selectTable
 
     def where(self, conds):
-        whereTable = copy.copy(self)
+        whereTable = copy.deepcopy(self)
         whereTable._addWhereCond(conds)
         return whereTable
 
@@ -235,19 +229,19 @@ class Table(object):
         self.__having = having
 
     def groupby(self, cols):
-        groupbyTable = copy.copy(self)
+        groupbyTable = copy.deepcopy(self)
         groupby = TableGroupby(groupbyTable, cols)
         groupbyTable._setGroupby(groupby)
         return groupby
 
     def contextby(self, cols):
-        contextbyTable = copy.copy(self)
+        contextbyTable = copy.deepcopy(self)
         contextby = TableContextby(contextbyTable, cols)
         contextbyTable._setContextby(contextby)
         return contextby
 
     def sort(self, bys):
-        sortTable = copy.copy(self)
+        sortTable = copy.deepcopy(self)
         sortTable._setSort(bys)
         return sortTable
 
@@ -256,12 +250,12 @@ class Table(object):
         topTable._setTop(num)
         return topTable
 
-    def exec(self, expr):
-        if expr:
-            self._setSelect(expr)
-        pattern = re.compile("select", re.IGNORECASE)
-        query = pattern.sub('exec', self.showSQL())
-        return self.__session.run(query)
+    # def exec(self, expr):
+    #     if expr:
+    #         self._setSelect(expr)
+    #     pattern = re.compile("select", re.IGNORECASE)
+    #     query = pattern.sub('exec', self.showSQL())
+    #     return self.__session.run(query)
 
 
     @property
@@ -272,7 +266,7 @@ class Table(object):
         idx = sql.lower().index("from")
         sql_new = "select count(*) as ct " + sql[idx:]
         df = self.__session.run(sql_new)
-        if df.shape[0]>1:
+        if df.shape[0] > 1:
             return df.shape[0]
         else:
             return df['ct'].iloc[0]
@@ -292,7 +286,7 @@ class Table(object):
             self.__columns = z["colDefs"]["name"]
         return self.__columns
 
-    
+
     @property
     def schema(self):
         schema = self.__session.run("schema(%s)" % self.__tableName)  # type: dict
@@ -317,7 +311,7 @@ class Table(object):
         :param aggFunc: aggregation function, default lambda x: x
         :return: TablePivotBy object
         """
-        pivotByTable = copy.copy(self)
+        pivotByTable = copy.deepcopy(self)
         return TablePivotBy(pivotByTable, index, column, value, aggFunc)
 
 
@@ -375,7 +369,7 @@ class Table(object):
         leftColumnNames = ''.join(['`' + x for x in left_on])
         rightColumnNames = ''.join(['`' + x for x in right_on])
         finalTableName = '%s(%s,%s,%s,%s)' % (
-        joinFuncPrefix + joinFunc, leftTableName, rightTableName, leftColumnNames, rightColumnNames)
+            joinFuncPrefix + joinFunc, leftTableName, rightTableName, leftColumnNames, rightColumnNames)
         # print(finalTableName)
         self._init_schema()
         right._init_schema()
@@ -392,7 +386,7 @@ class Table(object):
         joinTable._setLeftTable(self.tableName())
         joinTable._setRightTable(right.tableName())
         joinTable._setTableName(finalTableName)
-        #joinTable._setSelect(leftSelectCols + rightSelectCols)
+        # joinTable._setSelect(leftSelectCols + rightSelectCols)
         joinTable._setSelect('*')
         if merge_for_update:
             joinTable.setMergeForUpdate(True)
@@ -455,7 +449,7 @@ class Table(object):
         # joinTable._setSelect(leftSelectCols + rightSelectCols)
         return joinTable
 
-    def merge_window(self, right, leftBound=None, rightBound=None, aggFunctions=None, on=None, left_on=None, right_on=None, prevailing=False):
+    def merge_window(self, right, leftBound=None, rightBound=None, aggFunctions=None, on=None, left_on=None,right_on=None, prevailing=False):
 
         """
                 window merge two tables on some columns.
@@ -503,11 +497,12 @@ class Table(object):
 
         leftColumnNames = ''.join(['`' + x for x in left_on])
         rightColumnNames = ''.join(['`' + x for x in right_on])
-
+        if isinstance(aggFunctions, list):
+            aggFunctions = '[' + ','.join(aggFunctions) + ']'
         if ifPrevailing:
-            finalTableName = 'pwj(%s,%s,%d:%d,%s,%s,%s)' % (leftTableName, rightTableName, leftBound, rightBound, '<'+aggFunctions+'>', leftColumnNames, rightColumnNames)
+            finalTableName = 'pwj(%s,%s,%d:%d,%s,%s,%s)' % (leftTableName, rightTableName, leftBound, rightBound, '<' + aggFunctions + '>', leftColumnNames,rightColumnNames)
         else:
-            finalTableName = 'wj(%s,%s,%d:%d,%s,%s,%s)' % (leftTableName, rightTableName, leftBound, rightBound, '<'+aggFunctions+'>', leftColumnNames, rightColumnNames)
+            finalTableName = 'wj(%s,%s,%d:%d,%s,%s,%s)' % (leftTableName, rightTableName, leftBound, rightBound, '<' + aggFunctions + '>', leftColumnNames,rightColumnNames)
         print(finalTableName)
         self._init_schema()
         right._init_schema()
@@ -515,6 +510,7 @@ class Table(object):
         joinTable._setLeftTable(self.tableName())
         joinTable._setRightTable(right.tableName())
         joinTable._setTableName(finalTableName)
+        joinTable._setSelect('*')
         return joinTable
 
     def merge_cross(self, right):
@@ -539,7 +535,7 @@ class Table(object):
 
     def _assembleSelect(self):
         try:
-            if len(self.__select) and isinstance(self.__select,list):
+            if len(self.__select) and isinstance(self.__select, list):
                 return ','.join(self.__select)
             else:
                 return '*'
@@ -619,15 +615,15 @@ class Table(object):
             fmtDict['cols'] = '"' + '","'.join(cols) + '"'
             query = re.sub(' +', ' ', runstr.format(**fmtDict).strip())
             for col in cols:
-               for colName in self.__select:
-                   if col.lower() == colName.lower():
-                       self.__select.remove(colName)
+                for colName in self.__select:
+                    if col.lower() == colName.lower():
+                        self.__select.remove(colName)
             self.__session.run(query)
         else:
             runstr = '{table}.drop!([{cols}])'
             fmtDict = dict()
             fmtDict['table'] = self.tableName()
-            fmtDict['cols'] ="'"+cols + "'"
+            fmtDict['cols'] = "'" + cols + "'"
             query = re.sub(' +', ' ', runstr.format(**fmtDict).strip())
             for colName in self.__select:
                 if cols.lower() == colName.lower():
@@ -635,7 +631,7 @@ class Table(object):
         return self
 
     def executeAs(self, newTableName):
-        st = newTableName + "=(" + self.showSQL()+")"
+        st = newTableName + "=(" + self.showSQL() + ")"
         print(st)
         self.__session.run(st)
         return Table(data=newTableName, s=self.__session)
@@ -704,7 +700,7 @@ class Table(object):
         self._init_schema()
 
         query = self.showSQL()
-        df = self.__session.run(query)  # type: DataFrame
+        df = self.__session.run(query) # type: DataFrame
 
         return df
 
@@ -889,7 +885,7 @@ class TablePivotBy(object):
         """
         query = self.showSQL()
 
-        df = self.__t.session().run(query)  # type: DataFrame
+        df = self.__t.session().run(query) # type: DataFrame
 
         return df
 
@@ -938,7 +934,7 @@ class TableGroupby(object):
         self.__t = t  # type: Table
 
     def sort(self, bys):
-        sortTable = copy.copy(self.__t)
+        sortTable = copy.deepcopy(self.__t)
         sortTable._setSort(bys)
         return TableGroupby(sortTable, self.__groupBys, self.__having)
 
@@ -996,16 +992,14 @@ class TableGroupby(object):
         '''
         selectCols = self.__t._getSelect()
         if isinstance(func, list):
-            selectCols = [_getFuncName(f) + '(' + x + ')' for x in selectCols for f in func if x not in self.__groupBys]
+            selectCols = [_getFuncName(f) + '(' + x + ')' for x in selectCols for f in func ] #if x not in self.__groupBys
         elif isinstance(func, dict):
             funcDict = {}
             for colName, f in func.iteritems():
                 funcDict[colName] = f if isinstance(f, list) else [f]
-            # selectCols = [_getFuncName(f) + '(' + x + ')' for x, funcs in funcDict.iteritems() for f in funcs if x not in self.__groupBys]
-            selectCols = [_getFuncName(f) + '(' + x + ')' for x, funcs in funcDict.iteritems() for f in funcs ]
+            selectCols = [_getFuncName(f) + '(' + x + ')' for x, funcs in funcDict.iteritems() for f in funcs ] #if x not in self.__groupBys
         elif isinstance(func, str):
-            # selectCols = [_getFuncName(func) + '(' + x + ')' for x in selectCols if x not in self.__groupBys]
-            selectCols = [_getFuncName(func) + '(' + x + ')' for x in selectCols]
+            selectCols = [_getFuncName(func) + '(' + x + ')' for x in selectCols ] #if x not in self.__groupBys
         else:
             raise RuntimeError('invalid func format, func: aggregate function name or a list of aggregate function names'
                                ' or a dict of column label/expression->func')
@@ -1060,7 +1054,7 @@ class TableGroupby(object):
             cols = [cols]
         if isinstance(func, list) is False:
             func = [func]
-        if builtins.sum([1 for x in cols if isinstance(x, tuple) is False or len(x) != 2]):
+        if __builtin__.sum([1 for x in cols if isinstance(x, tuple) is False or len(x) != 2]):
             raise RuntimeError('agg2 only accepts (x,y) pair or a list of (x,y) pair as cols')
         funcName = [_getFuncName(f) + '(' + x + ',' + y + ')' for f in func for x, y in cols]
         if funcName:
@@ -1100,7 +1094,7 @@ class TableContextby(object):
         self.__having = having
 
     def sort(self, bys):
-        sortTable = copy.copy(self.__t)
+        sortTable = copy.deepcopy(self.__t)
         sortTable._setSort(bys)
         return TableContextby(sortTable, self.__contextBys)
 
@@ -1200,7 +1194,7 @@ class TableContextby(object):
             cols = [cols]
         if isinstance(func, list) is False:
             func = [func]
-        if builtins.sum([1 for x in cols if isinstance(x, tuple) is False or len(x) != 2]):
+        if __builtin__.sum([1 for x in cols if isinstance(x, tuple) is False or len(x) != 2]):
             raise RuntimeError('agg2 only accepts (x,y) pair or a list of (x,y) pair as cols')
         funcName = [_getFuncName(f) + '(' + x + ',' + y + ')' for f in func for x, y in cols]
         if funcName:
@@ -1252,7 +1246,7 @@ class TableContextby(object):
 
     def cummax(self):
         return self.agg('cummax')
-
+    
     def cumprod(self):
         return self.agg('cumprod')
 
@@ -1289,24 +1283,24 @@ class TableContextby(object):
         return df
 
 
-wavg = TableGroupby.wavg
-wsum = TableGroupby.wsum
-covar = TableGroupby.covar
-corr = TableGroupby.corr
-count = TableGroupby.count
-max = TableGroupby.max
-min = TableGroupby.min
-sum = TableGroupby.sum
-sum2 = TableGroupby.sum2
-size = TableGroupby.size
-avg = TableGroupby.avg
-std = TableGroupby.std
-prod = TableGroupby.prod
-var = TableGroupby.var
-first = TableGroupby.first
-last = TableGroupby.last
-eachPre = TableContextby.eachPre
-cumsum = TableContextby.cumsum
-cumprod = TableContextby.cumprod
-cummax = TableContextby.cummax
-cummin = TableContextby.cummin
+wavg=TableGroupby.wavg
+wsum=TableGroupby.wsum
+covar=TableGroupby.covar
+corr=TableGroupby.corr
+count=TableGroupby.count
+max=TableGroupby.max
+min=TableGroupby.min
+sum=TableGroupby.sum
+sum2=TableGroupby.sum2
+size=TableGroupby.size
+avg=TableGroupby.avg
+std=TableGroupby.std
+prod=TableGroupby.prod
+var=TableGroupby.var
+first=TableGroupby.first
+last=TableGroupby.last
+eachPre=TableContextby.eachPre
+cumsum=TableContextby.cumsum
+cumprod=TableContextby.cumprod
+cummax=TableContextby.cummax
+cummin=TableContextby.cummin

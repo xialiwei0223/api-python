@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from . import date_util as d
-from . import  type_util as t
+import type_util as t
 import dolphindb.date_util as dd
 from dolphindb.date_util import *
 from dolphindb.pair import Pair
@@ -10,30 +10,25 @@ from dolphindb.pair import Pair
 DBTYPE = dict()
 DBTYPE[bool] = DT_BOOL
 DBTYPE[int] = DT_INT
-# DBTYPE[int] = DT_LONG
+DBTYPE[long] = DT_LONG
 DBTYPE[float] = DT_DOUBLE
 DBTYPE[str] = DT_STRING
-DBTYPE[d.Date] = DT_DATE
-DBTYPE[d.Month] = DT_MONTH
-DBTYPE[d.Time] = DT_TIME
-DBTYPE[d.Minute] = DT_MINUTE
-DBTYPE[d.Second] = DT_SECOND
-DBTYPE[dd.Datetime] = DT_DATETIME
-DBTYPE[d.Datetime] = DT_DATETIME
-DBTYPE[d.Timestamp] = DT_TIMESTAMP
-DBTYPE[d.NanoTime] = DT_NANOTIME
-DBTYPE[d.NanoTimestamp] = DT_NANOTIMESTAMP
+DBTYPE[Date] = DT_DATE
+DBTYPE[Month] = DT_MONTH
+DBTYPE[Time] = DT_TIME
+DBTYPE[Minute] = DT_MINUTE
+DBTYPE[Second] = DT_SECOND
+DBTYPE[Datetime] = DT_DATETIME
+DBTYPE[Timestamp] = DT_TIMESTAMP
+DBTYPE[NanoTime] = DT_NANOTIME
+DBTYPE[NanoTimestamp] = DT_NANOTIMESTAMP
 
 ## numpy dtype.name to xxdb data type mapping
 DBTYPE['bool'] = DT_BOOL
 DBTYPE['int32'] = DT_INT
-DBTYPE["class 'numpy.int32'"] = DT_INT
 DBTYPE['int64'] = DT_LONG
-DBTYPE["<class 'numpy.int64'>"]  = DT_LONG
 DBTYPE['float32'] = DT_FLOAT
-DBTYPE["<class 'numpy.float32'>"] = DT_FLOAT
 DBTYPE['float64'] = DT_DOUBLE
-DBTYPE["<class 'numpy.float64'>"] = DT_DOUBLE
 DBTYPE['string'] = DT_STRING
 DBTYPE['Date'] = DT_DATE
 DBTYPE['Month'] = DT_MONTH
@@ -45,7 +40,7 @@ DBTYPE['Timestamp'] = DT_TIMESTAMP
 DBTYPE['NanoTime'] = DT_NANOTIME
 DBTYPE['NanoTimestamp'] = DT_NANOTIMESTAMP
 DBTYPE['datetime64[ns]']=DT_DATETIME64
-
+DBTYPE['datetime64[D]']=DT_DATETIME64
 class nan(object):
     def __init__(self, type):
         self.__type = type
@@ -146,7 +141,7 @@ def determine_form_type(obj):
         dbType = DBTYPE[obj.type]
     elif (isinstance(obj, bool)
         or isinstance(obj, int)
-        # or isinstance(obj, long)
+        or isinstance(obj, long)
         or isinstance(obj, float)
         or isinstance(obj, str)
         or isinstance(obj, d.Date)
