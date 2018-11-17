@@ -141,7 +141,7 @@ class Minute(temporal):
 
     def to_datetime(self):
         if self.value == DBNAN[DT_MINUTE]: return np.nan
-        return datetime(DEFAULT_YEAR,1,1, int(self.value / 3600), int(self.value % 3600 / 60), 1)
+        return datetime(DEFAULT_YEAR,1,1, int(self.value / 3600), int(self.value % 3600 / 60), 0)
 
 
 class Second(temporal):
