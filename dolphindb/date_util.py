@@ -10,7 +10,7 @@ cumMonthDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
 cumLeapMonthDays = [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366]
 monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 leapMonthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-START_DATE = date(2000, 01, 01)
+START_DATE = date(2000, 1, 1)
 DEFAULT_YEAR=1970
 
 class temporal(object):
