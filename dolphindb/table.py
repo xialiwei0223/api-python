@@ -536,7 +536,7 @@ class Table(object):
     def _assembleSelect(self):
         try:
             if len(self.__select) and isinstance(self.__select, list):
-                return ','.join(self.__select)
+                return ','.join([str(x) for x in self.__select])
             else:
                 return '*'
         except AttributeError:
