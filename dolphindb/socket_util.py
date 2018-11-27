@@ -11,14 +11,11 @@ def sendall(socket, msg):
         totalsent = totalsent + sent
     return totalsent
 
-def recvall(socket, n, timeout=60):
+def recvall(socket, n):
     # Helper function to recv n bytes or return None if EOF is hit
     data = ''
     while len(data) < n:
-        if timeout == -1:
-            ready = select.select([socket], [], [])
-        else:
-            ready = select.select([socket], [], [], timeout)
+        ready = select.select([socket], [], [])
         if not ready[0]:
             return data
         packet = socket.recv(n - len(data))
