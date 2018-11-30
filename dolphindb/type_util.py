@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from . import date_util as d
-import type_util as t
+from . import  type_util as t
 import dolphindb.date_util as dd
 from dolphindb.date_util import *
 from dolphindb.pair import Pair
@@ -10,18 +10,19 @@ from dolphindb.pair import Pair
 DBTYPE = dict()
 DBTYPE[bool] = DT_BOOL
 DBTYPE[int] = DT_INT
-DBTYPE[long] = DT_LONG
+# DBTYPE[int] = DT_LONG
 DBTYPE[float] = DT_DOUBLE
 DBTYPE[str] = DT_STRING
-DBTYPE[Date] = DT_DATE
-DBTYPE[Month] = DT_MONTH
-DBTYPE[Time] = DT_TIME
-DBTYPE[Minute] = DT_MINUTE
-DBTYPE[Second] = DT_SECOND
-DBTYPE[Datetime] = DT_DATETIME
-DBTYPE[Timestamp] = DT_TIMESTAMP
-DBTYPE[NanoTime] = DT_NANOTIME
-DBTYPE[NanoTimestamp] = DT_NANOTIMESTAMP
+DBTYPE[d.Date] = DT_DATE
+DBTYPE[d.Month] = DT_MONTH
+DBTYPE[d.Time] = DT_TIME
+DBTYPE[d.Minute] = DT_MINUTE
+DBTYPE[d.Second] = DT_SECOND
+DBTYPE[dd.Datetime] = DT_DATETIME
+DBTYPE[d.Datetime] = DT_DATETIME
+DBTYPE[d.Timestamp] = DT_TIMESTAMP
+DBTYPE[d.NanoTime] = DT_NANOTIME
+DBTYPE[d.NanoTimestamp] = DT_NANOTIMESTAMP
 
 ## numpy dtype.name to xxdb data type mapping
 DBTYPE['bool'] = DT_BOOL
@@ -65,7 +66,7 @@ def swap(val, dt_type=None):
     # when write to xxdb, for a null object of a given type, returns xxdb representation
     if isinstance(val, nan): return DBNAN[val.type]
     # when read number types from xxdb, if xxdb object is nan, create a null instance.
-    if dt_type and val == DBNAN[dt_type]: return np.nan  #nan(dt_type) : changed from nan(dt_type) to np.nan as this is used for numpy
+    if dt_type and val == DBNAN[dt_type]: return nan(dt_type)  #nan(dt_type) : changed from nan(dt_type) to np.nan as this is used for numpy
     return val
 
 
@@ -141,7 +142,7 @@ def determine_form_type(obj):
         dbType = DBTYPE[obj.type]
     elif (isinstance(obj, bool)
         or isinstance(obj, int)
-        or isinstance(obj, long)
+        # or isinstance(obj, long)
         or isinstance(obj, float)
         or isinstance(obj, str)
         or isinstance(obj, d.Date)
