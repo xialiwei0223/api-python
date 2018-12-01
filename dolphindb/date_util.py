@@ -1,42 +1,18 @@
 import numpy as np
 from datetime import datetime,date, time
-from .settings import *
+from settings import *
 import warnings
 
 DISPLAY_ROWS = 20
 DISPLAY_COLS = 100
 DISPLAY_WIDTH = 100
 
-cumMonthDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365, 0, 0,59,0]
+cumMonthDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
 cumLeapMonthDays = [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366]
 monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 leapMonthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-START_DATE = date(2000, 0o01, 0o01)
+START_DATE = date(2000, 1, 1)
 DEFAULT_YEAR=1970
-
-#
-# class Bool(object):
-#     def __init__(self, val):
-#         self.__value = val
-#
-#     @property
-#     def value(self):
-#         return self.__value
-#
-#     @classmethod
-#     def null(cls):
-#         return cls(DBNAN[DT_BOOL])
-#
-#     @classmethod
-#     def isnull(cls, obj):
-#         try:
-#             if np.isnan(obj):
-#                 return True
-#         except:
-#             pass
-#         return obj.value == DBNAN[DT_BOOL]
-
-
 
 class temporal(object):
     def __init__(self, val):
@@ -52,7 +28,6 @@ class temporal(object):
     #     if isinstance(other, self.__class__): return self.__value == other.__value
     #     if isinstance(other, int) or isinstance(other, long): return self.__value == other
     #     return False
-
 
 
 class Date(temporal):
@@ -143,7 +118,6 @@ class Time(temporal):
     def to_datetime(self):
         return datetime(DEFAULT_YEAR,1,1, int(self.value / 3600000), int(self.value / 60000 % 60), int(self.value / 1000 % 60), int(self.value % 1000 * 1000))
 
-
 class Minute(temporal):
 
     @classmethod
@@ -219,7 +193,6 @@ class Datetime(temporal):
         if self.value == DBNAN[DT_DATETIME]: return np.nan
         return parseDateTime(self.value)
 
-
     def __repr__(self):
         if self.value == DBNAN[DT_DATETIME]: return ''
         dt = self.to_datetime()
@@ -287,7 +260,7 @@ class NanoTimestamp(temporal):
         return cls(countNanoseconds(date_time))
 
     @classmethod
-    def from_datetime64(cls,dt64):
+    def from_datetime64(cls, dt64):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             if dt64 == np.datetime64('NaT') or dt64 is None:
@@ -339,15 +312,13 @@ def countDays(date):
         days += int((offset400Years - 1) / 4) + 1 - int((offset400Years - 1) / 100)
     if (year % 4 == 0 and year % 100 != 0) or year % 400 == 0:
         days += cumLeapMonthDays[month-1];
-        days += day if day <= leapMonthDays[month - 1] else 0;
+        days +=  day if day <= leapMonthDays[month - 1] else 0;
     else:
         days += cumMonthDays[month - 1]
         days += day if day <= monthDays[month - 1]  else 0
     return days
 
-
 def parseDate(days):
-
     days += 719529
 
     circleIn400Years = int(days / 146097)
@@ -357,6 +328,7 @@ def parseDate(days):
     similarYears = int(offsetIn400Years / 365)
 
     tmpDays = similarYears * 365
+
     if similarYears > 0:
         tmp = int((similarYears - 1) / 4) + 1 - int((similarYears - 1) / 100)
         if tmp%1 > 0.72:
@@ -412,7 +384,6 @@ def reverseParseDate(date):
     else:
         return yearsDay + mDay + day - 719544
 
-
 def countDateTimeSeconds(date_time):
     days = countDays(date_time.date())
     return days * 86400 + (date_time.hour * 60 + date_time.minute) * 60 + date_time.second
@@ -429,7 +400,6 @@ def countNanotime(time):
     secs = (time.hour * 60 + time.minute) * 60 + time.second
     return secs * 1000000000 + time.microsecond * 1000;
 
-
 def parseDateTime(seconds):
     days = int(seconds / 86400)
     dt = parseDate(days)
@@ -441,7 +411,6 @@ def parseDateTime(seconds):
     minute = int(seconds / 60)
     second = int(seconds % 60)
     return datetime(dt.year, dt.month, dt.day, hour, minute, second)
-
 
 def parseTimestamp(milliseconds):
     days = int(milliseconds / 86400000)
@@ -456,7 +425,6 @@ def parseTimestamp(milliseconds):
     minute = int(seconds / 60)
     second = int(seconds % 60)
     return datetime(dt.year, dt.month, dt.day, hour, minute, second, microsecond)
-
 
 def parseNanoTimestamp(nanoseconds):
     days = int(nanoseconds / (86400000 * 1000000))

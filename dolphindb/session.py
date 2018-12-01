@@ -212,7 +212,7 @@ class session(object):
         #we use nanotimestamp for it
         #however, packing value is different from other datatypes
         #so we handle it seperately
-        if dbType == 100:
+        if dbType == DT_DATETIME64:
             flag = (dbForm << 8) + DT_NANOTIMESTAMP
             dbType = DT_NANOTIMESTAMP
             if isinstance(obj, list) or (isinstance(obj, np.ndarray) and dbForm == DF_VECTOR):
