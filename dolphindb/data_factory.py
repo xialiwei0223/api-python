@@ -1,28 +1,21 @@
 from struct import Struct
-from .date_util import *
-from dolphindb.socket_util import read_string, recvall, recvallhex
-from .pair import Pair
-from .settings import *
-from .type_util import *
+from date_util import *
+from socket_util import read_string, recvall
+from pair import Pair
+from settings import *
+from type_util import *
 import numpy as np
 import pandas as pd
+
 
 def get_form_type(socket):
     """
     Read the data form and type
     :return:
     """
-    # print(socket)
     flag = DATA_UNPACKER_SCALAR[DT_SHORT](socket)
-
-    # if flag == 1305:
-    #     flag = 274
-    # print("-----",flag)
     data_form = flag >> 8
     data_type = flag & 0xff
-
-    # print("form", data_form)
-    # print("type", data_type)
     return data_form, data_type
 
 
@@ -30,35 +23,18 @@ def table_str_col_generator(socket):
     row = DATA_UNPACKER_SCALAR[DT_INT](socket)
     col = DATA_UNPACKER_SCALAR[DT_INT](socket)
     size = row * col
-    vc = np.array([read_string(socket) for i in range(size)])
+    vc = np.array([read_string(socket) for i in xrange(size)])
     return vc
 
 
-def read_dolphindb_obj_general(socket):
-    # print(socket)
+def read_xxdb_obj_general(socket):
     data_form, data_type = get_form_type(socket)
-    # print( data_type)
-    # print('------')
     if data_form == DF_VECTOR and data_type == DT_ANY:
         return VECTOR_FACTORY[DT_ANY](socket)
     elif data_form in [DF_SCALAR, DF_VECTOR]:
 
         if data_type in DATA_LOADER[data_form]:
-            obj = DATA_LOADER[data_form][data_type](socket)
-            if data_type == DT_BOOL:
-                if data_form == DF_SCALAR:
-                    if isinstance(obj, nan) or obj is None or np.isnan(obj):
-                        return boolNan
-                    return bool(obj)
-                else:
-                    obj_new = []
-                    for o in obj:
-                        if isinstance(o, nan) or o is None or np.isnan(o):
-                            obj_new.append(boolNan)
-                        else:
-                            obj_new.append(bool(o))
-                    obj = obj_new
-            return obj
+            return DATA_LOADER[data_form][data_type](socket)
         else:
             return None
     elif data_form in [DF_SET, DF_DICTIONARY, DF_TABLE, DF_MATRIX]:
@@ -70,18 +46,18 @@ def read_dolphindb_obj_general(socket):
 
 def vec_generator(socket, data_type):
     '''
-    generate a numpy array from a dolphindb vector
+    generate a numpy array from a xxdb vector
     :param socket: TCP socket
-    :param data_type: dolphindb data type
+    :param data_type: xxdb data type
     :return: the python corresponding data type
     '''
     row = DATA_UNPACKER_SCALAR[DT_INT](socket)
     col = DATA_UNPACKER_SCALAR[DT_INT](socket)
     size = row * col
     if data_type in [DT_SYMBOL, DT_STRING]:
+
         vc = []
-        # print("size",size)
-        for i in range(size):
+        for i in xrange(size):
             vc.append(read_string(socket))
         """
         while True:
@@ -91,22 +67,22 @@ def vec_generator(socket, data_type):
             data += packet
         (data.split('\x00\x00')[0].split('\x00')[:size])
         """
-        return vc#np.array(vc, dtype=object)
+        return np.array(vc, dtype=object)
     else:
-        return list(DATA_UNPACKER[data_type](socket, size))
+        return np.array(list(DATA_UNPACKER[data_type](socket, size)))
 
 
 def vector_factory_any(socket):
     row = DATA_UNPACKER_SCALAR[DT_INT](socket)
     col = DATA_UNPACKER_SCALAR[DT_INT](socket)
-    # read one more byte, otherwise fail to generate the vector, not sure why
-    # DATA_UNPACKER_SCALAR[DT_BYTE](socket)
     size = row * col
-    # print("size",size)
     myList = []
     for i in range(0, size):
-        myList.append(read_dolphindb_obj_general(socket))
+        myList.append(read_xxdb_obj_general(socket))
     return myList
+
+
+
 
 
 def set_generator(socket):
@@ -121,7 +97,7 @@ def set_generator(socket):
 
 def dict_generator(socket):
     """
-    Generate a python dictionary object from a dolphindb dictionary object
+    Generate a python dictionary object from a xxdb dictionary object
     :param socket:
     :return:
     """
@@ -140,20 +116,20 @@ def dict_generator(socket):
         raise Exception("The form of dictionary keys must be vector")
     if val_type < 0 or val_type >= TYPE_NUM:
         raise Exception("Invalid key type: " + str(key_type))
-    vals = VECTOR_FACTORY[val_type](socket)
 
+    vals = VECTOR_FACTORY[val_type](socket)
     if len(keys) != len(vals):
         raise Exception("The keys array size is not equal to the vals array size.")
 
     tmp = dict()
-    for idx in range(len(keys)):
+    for idx in xrange(len(keys)):
         tmp[keys[idx]] = vals[idx]
     return tmp
 
 
 def table_generator(socket):
     """
-    Generate a pandas data frame from dolphindb table object
+    Generate a pandas data frame from xxdb table object
     :param socket:
     :return:
     """
@@ -171,7 +147,6 @@ def table_generator(socket):
     df = pd.DataFrame()
     for i in range(len(colNames)):
         data_form, data_type = get_form_type(socket)
-        # print(data_type)
         if data_form != DF_VECTOR:
             raise Exception("column " + colNames[i] + "in table " + tableName + " must be a vector!")
         if data_type in [DT_SYMBOL, DT_STRING]:
@@ -189,7 +164,7 @@ def table_generator(socket):
                 else:
                     col_new.append(boolNan)
             col = col_new
-        elif data_type in [DT_DATE, DT_MONTH, DT_MINUTE, DT_TIME, DT_TIMESTAMP, DT_SECOND, DT_NANOTIME, DT_NANOTIMESTAMP, DT_DATETIME]:
+        elif data_type in [DT_DATE, DT_MONTH, DT_MINUTE, DT_TIME, DT_TIMESTAMP, DT_SECOND, DT_NANOTIME,DT_NANOTIMESTAMP, DT_DATETIME]:
             col = VECTOR_FACTORY[data_type](socket)
             if data_type in [DT_DATE, DT_MONTH]:
                 col_new = []
@@ -211,16 +186,16 @@ def table_generator(socket):
                 col_new = []
                 for d in col:
                     try:
-                        dt = d.to_datetime()
-                        col_new.append(np.datetime64(dt))
+                        print(d.to_datetime())
+                        col_new.append(np.datetime64(d.to_datetime()))
                     except:
                         col_new.append(np.datetime64('NaT'))
                 col = col_new
-            elif data_type in [DT_NANOTIME]:
+            elif data_type in [DT_NANOTIME, DT_DATETIME64]:
                 col_new = []
                 for d in col:
                     try:
-                        col_new.append(d.to_datetime64())
+                        col_new.append(np.datetime64(d.to_nanotime()))
                     except:
                         col_new.append(np.datetime64('NaT'))
                 col = col_new
@@ -228,14 +203,13 @@ def table_generator(socket):
                 col_new = []
                 for d in col:
                     try:
-                        col_new.append(d.to_datetime64())
+                        col_new.append(np.datetime64(d.to_nanotimestamp()))
                     except:
                         col_new.append(np.datetime64('NaT'))
                 col = col_new
         else:
             col = VECTOR_FACTORY[data_type](socket)
         df[colNames[i]] = col
-        # print(df)
     return df
 
 
@@ -260,29 +234,25 @@ def matrix_generator(socket):
         colLabels = VECTOR_FACTORY[data_type](socket)
 
     flag = DATA_UNPACKER_SCALAR[DT_SHORT](socket)
-    # print(flag)
     data_type = flag & 0xff
     if data_type < 0 or data_type >= TYPE_NUM:
         raise Exception("Invalid data type for matrix row labels: " + data_type)
     rows = DATA_UNPACKER_SCALAR[DT_INT](socket)
     cols = DATA_UNPACKER_SCALAR[DT_INT](socket)
     size = rows * cols
-
-    # print(data_type)
-    # print(type(DATA_UNPACKER[data_type](socket, size)))
     vals = DATA_UNPACKER[data_type](socket, size)
     if vals is not None:
         # print(data_type,socket)
-        vals = np.transpose(np.array(list(vals)).reshape(cols,rows))
+        vals = np.transpose(np.array(list(vals)).reshape(cols, rows))
     if not len(vals):
         vals = None
     return vals, rowLabels, colLabels
 
-"""endiness: the function is reset in dolphindb.connect"""
+"""endiness: the function is reset in xxdb.connect"""
 endianness = lambda x : x;
 
 
-""" Unpack scalar from dolphindb object """
+""" Unpack scalar from xxdb object """
 DATA_UNPACKER_SCALAR = dict()
 DATA_UNPACKER_SCALAR[DT_VOID] = lambda x: swap(Struct('b').unpack(recvall(x, DATA_SIZE[DT_BOOL]))[0], DT_BOOL)
 DATA_UNPACKER_SCALAR[DT_BOOL] = lambda x: swap(Struct('b').unpack(recvall(x, DATA_SIZE[DT_BOOL]))[0], DT_BOOL)
@@ -335,7 +305,7 @@ DATA_UNPACKER[DT_DICTIONARY] = lambda x, y: None
 DATA_UNPACKER[DT_OBJECT] = lambda x, y: None
 
 
-""" dictionary of functions for making numpy arrays from dolphindb vectors"""
+""" dictionary of functions for making numpy arrays from xxdb vectors"""
 VECTOR_FACTORY = dict()
 VECTOR_FACTORY[DT_VOID] = lambda x:[]
 VECTOR_FACTORY[DT_BOOL] = lambda x: vec_generator(x, DT_BOOL)
@@ -361,7 +331,7 @@ VECTOR_FACTORY[DT_STRING] = lambda x: list(map(lambda z: swap(z, DT_STRING), vec
 
 VECTOR_FACTORY[DT_ANY] = vector_factory_any
 
-""" dictionary of functions for loading different forms of data from dolphindb api"""
+""" dictionary of functions for loading different forms of data from xxdb api"""
 DATA_LOADER = dict()
 DATA_LOADER[DF_SCALAR] = DATA_UNPACKER_SCALAR
 DATA_LOADER[DF_VECTOR] = VECTOR_FACTORY
@@ -389,7 +359,7 @@ DATA_PACKER_SCALAR[DT_DATETIME] = lambda x: Struct(endianness('i')).pack(x.value
 DATA_PACKER_SCALAR[DT_TIMESTAMP] = lambda x: Struct(endianness('q')).pack(x.value)
 DATA_PACKER_SCALAR[DT_NANOTIME] = lambda x: Struct(endianness('q')).pack(x.value)
 DATA_PACKER_SCALAR[DT_NANOTIMESTAMP] = lambda x: Struct(endianness('q')).pack(x.value)
-#DATA_PACKER_SCALAR[DT_DATETIME64] = lambda x: Struct(endianness('q')).pack(x)
+# DATA_PACKER_SCALAR[DT_DATETIME64] = lambda x: Struct(endianness('q')).pack(x)
 
 """ pack from numpy 1D array """
 DATA_PACKER = dict()
@@ -407,7 +377,7 @@ DATA_PACKER[DT_DATETIME] = lambda x: Struct(endianness("%di" % x.size)).pack(*ma
 DATA_PACKER[DT_TIMESTAMP] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y: y.value, x))
 DATA_PACKER[DT_NANOTIME] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y: y.value, x))
 DATA_PACKER[DT_NANOTIMESTAMP] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y: y.value, x))
-#DATA_PACKER[DT_DATETIME64] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y: y.value, x))
+# DATA_PACKER[DT_DATETIME64] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y: y, x))
 
 """ pack from numpy multi-dimensional array """
 DATA_PACKER2D = dict()
@@ -415,7 +385,7 @@ DATA_PACKER2D[DT_BOOL] = lambda x: Struct(endianness("%db" % x.size)).pack(*map(
 DATA_PACKER2D[DT_INT] = lambda x: Struct(endianness("%di" % x.size)).pack(*map(lambda y:swap(y), x.T.flat))
 DATA_PACKER2D[DT_LONG] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:swap(y), x.T.flat))
 DATA_PACKER2D[DT_DOUBLE] = lambda x: Struct(endianness("%dd" % x.size)).pack(*map(lambda y:swap(y), x.T.flat))
-DATA_PACKER2D[DT_STRING] = None # dolphindb doesn't support 2-D string matrix
+DATA_PACKER2D[DT_STRING] = None # xxdb doesn't support 2-D string matrix
 DATA_PACKER2D[DT_DATE] = lambda x: Struct(endianness("%di" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
 DATA_PACKER2D[DT_MONTH] = lambda x: Struct(endianness("%di" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
 DATA_PACKER2D[DT_TIME] = lambda x: Struct(endianness("%di" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
@@ -425,4 +395,4 @@ DATA_PACKER2D[DT_DATETIME] = lambda x: Struct(endianness("%di" % x.size)).pack(*
 DATA_PACKER2D[DT_TIMESTAMP] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
 DATA_PACKER2D[DT_NANOTIME] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
 DATA_PACKER2D[DT_NANOTIMESTAMP] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
-#DATA_PACKER2D[DT_DATETIME64] =lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:y.value, x.T.flat))
+# DATA_PACKER[DT_DATETIME64] = lambda x: Struct(endianness("%dq" % x.size)).pack(*map(lambda y:y, x.T.flat))
