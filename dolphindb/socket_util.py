@@ -1,6 +1,3 @@
-import select
-
-
 def sendall(socket, msg, objs=b""):
     totalsent = 0
     MSGLEN = len(msg)
@@ -71,5 +68,4 @@ def read_string(socket):
         if '\x00' == packet.decode('ascii'):
             return data
         data += packet.decode('ascii')
-
 
