@@ -40,8 +40,12 @@ class Table(object):
                 'Column names must be passed in as a list')
         if isinstance(data, dict) or isinstance(data, DataFrame):
             df = data if isinstance(data, DataFrame) else DataFrame(data)
-            if not self.__tableName.startswith("TMP_TBL_"):
+            #if not self.__tableName.startswith("TMP_TBL_"):
+            #    self._setTableName(_generate_tablename())
+            if tableAliasName is None:
                 self._setTableName(_generate_tablename())
+            else:
+                self._setTableName(tableAliasName)
             self.__session.upload({self.__tableName: df})
             self.vecs = {}
 
