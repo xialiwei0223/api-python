@@ -68,4 +68,3 @@ def read_string(socket):
         if '\x00' == packet.decode('ascii'):
             return data
         data += packet.decode('ascii')
-

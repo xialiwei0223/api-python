@@ -94,7 +94,7 @@ class Time(temporal):
     @classmethod
     def from_time(cls, time):
         """create a time instance given datetime.time object"""
-        return cls(((time.hour * 60 + time.minute) * 60 + time.second) * 1000 + time.microsecond)
+        return cls(((time.hour * 60 + time.minute) * 60 + time.second) * 1000 + int(time.microsecond/1000))
 
     @classmethod
     def null(cls):
@@ -126,7 +126,7 @@ class Minute(temporal):
         return cls(time.hour * 60 + time.minute)
 
     @classmethod
-    def null(cls):
+    def null(cls, obj):
         return cls(DBNAN[DT_MINUTE])
 
     @classmethod
@@ -214,7 +214,6 @@ class Timestamp(temporal):
         return obj.value == DBNAN[DT_TIMESTAMP]
 
     def to_datetime(self):
-        if self.value== DBNAN[DT_TIMESTAMP]: return np.nan
         return parseTimestamp(self.value)
 
     def __repr__(self):
@@ -360,8 +359,6 @@ def parseDate(days):
 
     return date(year, month, day)
 
-#usage: import dolphindb.date_util as dd
-# dd.reverseParseDate(date object)
 def reverseParseDate(date):
 
     year = date.year
@@ -390,7 +387,7 @@ def countDateTimeSeconds(date_time):
 
 
 def countMilliseconds(date_time):
-    return countDateTimeSeconds(date_time) * 1000 + date_time.microsecond
+    return countDateTimeSeconds(date_time) * 1000 + int(date_time.microsecond/1000)
 
 def countNanoseconds(date_time):
     return countDateTimeSeconds(date_time) * 1000000000 + int(date_time.microsecond * 1000)
@@ -418,7 +415,7 @@ def parseTimestamp(milliseconds):
     milliseconds = int(milliseconds % 86400000)
     if (milliseconds < 0):
         milliseconds += 86400000
-    microsecond = int(milliseconds % 1000)
+    microsecond = int(milliseconds % 1000 * 1000)
     seconds = int(milliseconds / 1000)
     hour = int(seconds / 3600)
     seconds = int(seconds % 3600)

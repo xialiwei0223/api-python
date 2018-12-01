@@ -2,6 +2,7 @@ import re
 import socket
 import traceback
 import uuid
+from . import date_util as d
 from dolphindb import data_factory, socket_util
 from dolphindb.data_factory import *
 from dolphindb.settings import *
@@ -212,7 +213,7 @@ class session(object):
         #we use nanotimestamp for it
         #however, packing value is different from other datatypes
         #so we handle it seperately
-        if dbType == DT_DATETIME64:
+        if dbType == 100:
             flag = (dbForm << 8) + DT_NANOTIMESTAMP
             dbType = DT_NANOTIMESTAMP
             if isinstance(obj, list) or (isinstance(obj, np.ndarray) and dbForm == DF_VECTOR):

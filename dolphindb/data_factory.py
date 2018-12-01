@@ -1,8 +1,5 @@
 from struct import Struct
-from date_util import *
 from socket_util import read_string, recvall
-from pair import Pair
-from settings import *
 from type_util import *
 import numpy as np
 import pandas as pd
