@@ -126,7 +126,7 @@ class Minute(temporal):
         return cls(time.hour * 60 + time.minute)
 
     @classmethod
-    def null(cls, obj):
+    def null(cls):
         return cls(DBNAN[DT_MINUTE])
 
     @classmethod
