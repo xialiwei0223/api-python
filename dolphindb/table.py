@@ -22,8 +22,9 @@ def normalize_caseless(text):
     return unicodedata.normalize("NFKD", text.casefold())
 
 class Table(object):
-    def __init__(self, dbPath=None, data=None, tableAliasName=None, partitions=[], inMem=False, schemaInited=False,
-                 s=None):
+    def __init__(self, dbPath=None, data=None,  tableAliasName=None, partitions=None, inMem=False, schemaInited=False, s=None):
+        if partitions is None:
+            partitions = []
         self.__having = None
         self.__top = None
         self.__exec = False
@@ -82,7 +83,10 @@ class Table(object):
             raise RuntimeError("data must be a remote dolphindb table name or dict or DataFrame")
         self._init_schema()
 
-    def __deepcopy__(self, memodict={}):
+
+    def __deepcopy__(self, memodict=None):
+        if memodict is None:
+            memodict = {}
         newTable = Table(data=self.__tableName, schemaInited=True, s=self.__session)
         try:
             newTable.vecs = copy.deepcopy(self.vecs, memodict)
@@ -879,8 +883,8 @@ class TablePivotBy(object):
         self.__row = index
         self.__column = column
         self.__val = value
-        self.__t = t;
-        self.__agg = agg;
+        self.__t = t
+        self.__agg = agg
 
     def toDF(self):
         """

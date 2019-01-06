@@ -13,6 +13,7 @@ DBTYPE[int] = DT_INT
 DBTYPE[long] = DT_LONG
 DBTYPE[float] = DT_DOUBLE
 DBTYPE[str] = DT_STRING
+DBTYPE[unicode] = DT_STRING
 DBTYPE[Date] = DT_DATE
 DBTYPE[Month] = DT_MONTH
 DBTYPE[Time] = DT_TIME
@@ -39,33 +40,44 @@ DBTYPE['Datetime'] = DT_DATETIME
 DBTYPE['Timestamp'] = DT_TIMESTAMP
 DBTYPE['NanoTime'] = DT_NANOTIME
 DBTYPE['NanoTimestamp'] = DT_NANOTIMESTAMP
-DBTYPE['datetime64[ns]']=DT_DATETIME64
-DBTYPE['datetime64[D]']=DT_DATETIME64
-class nan(object):
-    def __init__(self, type):
-        self.__type = type
-
-    @property
-    def type(self):
-        return self.__type
-
-    def __repr__(self): return 'nan'
-
-# python doesn't have type-dependent Nan, we have to support different nan types here
-# for temporal types, nan support is built inside class
-byteNan = nan(DT_BYTE)
-boolNan = nan(DT_BOOL)
-shortNan = nan(DT_SHORT)
-intNan = nan(DT_INT)
-floatNan = nan(DT_FLOAT)
-doubleNan = nan(DT_DOUBLE)
+DBTYPE['datetime64[ns]'] = DT_DATETIME64
+DBTYPE['datetime64[D]'] = DT_DATETIME64
 
 
-def swap(val, dt_type=None):
-    # when write to xxdb, for a null object of a given type, returns xxdb representation
-    if isinstance(val, nan): return DBNAN[val.type]
-    # when read number types from xxdb, if xxdb object is nan, create a null instance.
-    if dt_type and val == DBNAN[dt_type]: return nan(dt_type)  #nan(dt_type) : changed from nan(dt_type) to np.nan as this is used for numpy
+# class nan(object):
+#     def __init__(self, type):
+#         self.__type = type
+#
+#     @property
+#     def type(self):
+#         return self.__type
+#
+#     def __repr__(self):
+#         return 'nan'
+#
+#
+# byteNan = nan(DT_BYTE)
+# boolNan = nan(DT_BOOL)
+# shortNan = nan(DT_SHORT)
+# intNan = nan(DT_INT)
+# floatNan = nan(DT_FLOAT)
+# doubleNan = nan(DT_DOUBLE)
+
+
+def swap_toxxdb_int(val, dt_type):
+    if pd.isna(val):
+        return DBNAN[dt_type]
+    return int(val)
+
+def swap_toxxdb(val, dt_type):
+    if pd.isna(val):
+        return DBNAN[dt_type]
+    return val
+
+def swap_fromxxdb(val, dt_type, nullMap):
+    if val == DBNAN[dt_type]:
+        return nullMap[dt_type]              # TODO: consider null value in numpy
+        # return nan(dt_type)
     return val
 
 
@@ -83,28 +95,30 @@ def  is_scalar(obj):
 
 
 def determine_form_type(obj):
-    """
-    determine the database form and type for the given python object
-    :return: a tuple
-    """
+
     if isinstance(obj, list):
         dbForm = DF_VECTOR
-
         if len(obj):
-            try:
-                dbType = obj[0].type if isinstance(obj[0],t.nan) else DBTYPE[type(obj[0])]
-                for val in obj:
-                    dbType2 = val.type if isinstance(val, t.nan) else DBTYPE[type(val)]
-                    if dbType != DT_ANY and dbType2 != dbType:
-                        dbType = DT_ANY
-                        break
-            except KeyError:
-                dbType = obj[0].dtype.name if isinstance(obj[0], t.nan) else DBTYPE[obj[0].dtype.name]
-                for val in obj:
-                    dbType2 = val.dtype.name if isinstance(val, t.nan) else DBTYPE[val.dtype.name]
-                    if dbType != DT_ANY and dbType2 != dbType:
-                        dbType = DT_ANY
-                        break
+            dbType = DBTYPE[type(obj[0])]
+            for val in obj:
+                dbType2 = DBTYPE[type(val)]
+                if dbType != DT_ANY and dbType2 != dbType:
+                    dbType = DT_ANY
+                    break
+            # try:
+            #     dbType = DBTYPE[type(obj[0])]
+            #     for val in obj:
+            #         dbType2 = DBTYPE[type(val)]
+            #         if dbType != DT_ANY and dbType2 != dbType:
+            #             dbType = DT_ANY
+            #             break
+            # except KeyError:
+            #     dbType = obj[0].dtype.name if isinstance(obj[0], t.nan) else DBTYPE[obj[0].dtype.name]
+            #     for val in obj:
+            #         dbType2 = val.dtype.name if isinstance(val, t.nan) else DBTYPE[val.dtype.name]
+            #         if dbType != DT_ANY and dbType2 != dbType:
+            #             dbType = DT_ANY
+            #             break
         else:
             raise RuntimeError("function argument with list type cannot be empty")
     elif isinstance(obj, dict):
@@ -117,6 +131,7 @@ def determine_form_type(obj):
         else:
             raise RuntimeError("function argument with dict type cannot be empty")
     elif isinstance(obj, np.ndarray):
+
         if obj.ndim > 2: # we need further check each element should be just a scalar
             raise RuntimeError("only support rank 1 or 2 numpy array!")
         dbForm = DF_VECTOR if obj.ndim == 1 else DF_MATRIX
@@ -155,9 +170,29 @@ def determine_form_type(obj):
         or isinstance(obj, d.NanoTimestamp)):
         dbForm = DF_SCALAR
         dbType = DBTYPE[type(obj)]
-    elif (isinstance(obj, t.nan)):
+    elif (isinstance(obj, np.nan)):
         dbForm = DF_SCALAR
-        dbType = obj.type
+        dbType = type(obj)
     else:
         raise RuntimeError("Sending type " + type(obj).__name__ + " is not supported yet!")
-    return (dbForm, dbType)
+    return dbForm, dbType
+
+
+def overwriteTypes(df, newTypes):
+    if not hasattr(df, '__2xdbColumnTypes__'):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df.__2xdbColumnTypes__ = dict()
+    for k,v in newTypes.items():
+        df.__2xdbColumnTypes__[k] = v
+
+
+def nullMapTemplate_allZero():
+    return {DT_VOID: np.nan, DT_BOOL: False, DT_BYTE: 0, DT_SHORT: 0,
+            DT_INT: 0, DT_LONG: 0, DT_FLOAT: 0.0, DT_DOUBLE: 0.0,
+            DT_SYMBOL: '', DT_STRING: ''}
+
+def nullMapTemplate_default():
+    return {DT_VOID: np.nan, DT_BOOL: np.nan, DT_BYTE: np.nan, DT_SHORT: np.nan,
+            DT_INT: np.nan, DT_LONG: np.nan, DT_FLOAT: np.nan, DT_DOUBLE: np.nan,
+            DT_SYMBOL: '', DT_STRING: ''}
