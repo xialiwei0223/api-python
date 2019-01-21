@@ -15,7 +15,7 @@ def sendall(socket, msg, objs=b""):
     return totalsent
 
 
-_rcv_buffer_size = 4096
+_rcv_buffer_size = 32768
 
 
 def recvall(socket, n, bufferList):
